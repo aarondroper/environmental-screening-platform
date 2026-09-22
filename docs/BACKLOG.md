@@ -6,13 +6,13 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: no implementation milestone has verified its acceptance criteria. Northern Colorado and the five-source MVP direction are owner-selected. The 2025 TIGER/Line boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded checks. PAD-US repair policy is owner-approved and the five-feature sample has two unchanged accepted records and three quarantined repair candidates; full regional validation is blocked by HTTP 403 on official ScienceBase package routes. FEMA NFHL remains access-blocked and has no effective/pending sample validation. Final Milestone 1 source approval remains open. Milestone 2A's workflow/product contract is defined in `docs/SCREENING_CONTRACT.md`; no application implementation has begun.
+Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B now has a local file-backed ETL/screening slice; it is not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
 
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite
 
-**Status:** The England recommendation and NWI MVP source are superseded. Owner selected Northern Colorado (Boulder, Larimer, Weld; approx. 7,391 sq mi) and the five-source direction: FEMA NFHL, PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and SSURGO hydric-soil information. Exact TIGER/Line 2025 county geometries pass validation and retain all three union components. NLCD, one 3DEP tile, and SSURGO SDA samples passed representative checks. The owner-approved PAD-US repair policy has been applied to a five-feature sample: two unchanged features accepted, three repaired candidates quarantined. Complete Colorado package access is blocked by official ScienceBase HTTP 403 responses; no regional QA or gap estimate exists. FEMA official service/download access remains independently blocked. Milestone 1 final source approval remains open. Milestone 2A was explicitly authorized and its contract is documented; no implementation has begun.
+**Status:** The England recommendation and NWI MVP source are superseded. Owner selected Northern Colorado (Boulder, Larimer, Weld; approx. 7,391 sq mi) and the five-source direction: FEMA NFHL, PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and SSURGO hydric-soil information. Exact TIGER/Line 2025 county geometries pass validation and retain all three union components. NLCD, one 3DEP tile, and SSURGO SDA samples passed representative checks and their initial small-window adapters have passed live smoke tests. The owner-approved PAD-US repair policy has been applied to a five-feature sample: two unchanged features accepted, three repaired candidates quarantined. Complete Colorado package access is blocked by official ScienceBase HTTP 403 responses; no regional QA or gap estimate exists. FEMA official service/download access remains independently blocked. Milestone 1 final source approval remains open. Milestone 2A was explicitly authorized; Milestone 2B has a local prototype but makes no full source-coverage claims.
 
 **Objective:** Complete artifact-level validation of the selected geography and sources for final source approval and implementation readiness. Milestone 2A's initial contract was explicitly authorized before this gate closed.
 
@@ -28,7 +28,7 @@ Current status: no implementation milestone has verified its acceptance criteria
 
 **Dependencies:** Public-source network access for the official PAD-US state package and FEMA NFHL, plus complete regional artifacts for source-specific checks. PAD-US repair policy is already owner-approved. The geography gate is complete. FEMA NFHL access is independently blocked; continue no source substitution and do not narrow the approved extent.
 
-**Acceptance criteria:** County identity/vintage and union geometry validate; all five exact products have suitable use/redistribution terms and repeatable access; representative artifacts pass source-specific integrity, schema/CRS, coverage and scale checks; PAD-US promotion behavior is explicitly approved; regional raster and soil processing/volume are bounded; FEMA effective, pending, mapped, and unknown coverage semantics are empirically validated; no owner-level source or geography decision remains. NWI is outside the MVP and must not be silently reintroduced. These are still required for final Milestone 1/source approval. The owner explicitly authorized the documentation-only Milestone 2A before that gate; no source-coverage claims or application implementation are authorized by that exception. Do not create a remote or push without owner authorization.
+**Acceptance criteria:** County identity/vintage and union geometry validate; all five exact products have suitable use/redistribution terms and repeatable access; representative artifacts pass source-specific integrity, schema/CRS, coverage and scale checks; PAD-US promotion behavior is explicitly approved; regional raster and soil processing/volume are bounded; FEMA effective, pending, mapped, and unknown coverage semantics are empirically validated; no owner-level source or geography decision remains. NWI is outside the MVP and must not be silently reintroduced. These are still required for final Milestone 1/source approval. The owner explicitly authorized controlled progression into Milestones 2A and 2B before that gate; the implementation must continue to disclose source maturity and cannot claim complete coverage. Do not create a remote or push without owner authorization.
 
 ## Milestone 2 — Screening workflow and product contract
 
@@ -36,14 +36,14 @@ Current status: no implementation milestone has verified its acceptance criteria
 
 **Objective:** Define the analyst workflow, result structure, source-specific metrics, and preliminary-screening limitations.
 
-**Status:** Milestone 2A contract definition is complete under explicit owner authorization despite incomplete final source validation. This is a controlled documentation progression only. Final Milestone 1 source approval remains open for complete regional PAD-US coverage/repair statistics and FEMA technical access/effective-pending validation. No application implementation is authorized by this status.
+**Status:** Milestone 2A contract definition and the first controlled Milestone 2B ETL slice are complete. Final Milestone 1 source approval remains open for complete regional PAD-US coverage/repair statistics and FEMA technical access/effective-pending validation. The implementation is local and incomplete; it does not enable production/region-wide conclusions.
 
 **Major deliverables:**
 
 - project/AOI lifecycle (defined in `SCREENING_CONTRACT.md`: map-drawn Polygon/MultiPolygon, GeoJSON API geometry, immutable AOI revisions, containment in the approved county union);
-- screening job lifecycle and asynchronous result semantics (defined; implementation remains future work);
-- per-source metric definitions and validation/coverage/observation-state semantics (defined with current maturity scopes);
-- result provenance and export contract (defined; implementation remains future work);
+- screening job lifecycle and result semantics (defined; a file-backed synchronous job runner implements an initial subset; external queue/worker remains future work);
+- per-source metric definitions and validation/coverage/observation-state semantics (defined; initial NLCD, 3DEP, SSURGO and boundary metrics implemented; PAD-US/FEMA remain non-operational);
+- result provenance and export contract (defined; initial JSON, CSV and GeoJSON exports implemented; GIS findings remain limited to SSURGO map units);
 - transparent preliminary-only/non-regulatory wording (defined);
 - primary AOI interaction selected for this contract: map drawing, with GeoJSON geometry at the API boundary; no end-user file-upload workflow is included in 2A.
 
@@ -51,7 +51,21 @@ Current status: no implementation milestone has verified its acceptance criteria
 
 The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AOI behavior; transparent per-source metrics for mapped FEMA zones, SSURGO hydric-soil indicators, terrain, land cover and protected areas; source versions/effective dates and lineage; result structure and exports; asynchronous job states; missing/unknown coverage; and preliminary-screening limitations. It prohibits a composite score, invented regulatory thresholds, a wetland determination, or an implication of jurisdictional-wetland presence/absence.
 
-**2A acceptance criteria:** A reviewer can understand what the platform intends to calculate for every selected source, which maturity and coverage states apply, what a completed result contains, and what the product explicitly does not conclude. This criterion is met by the design document only; source validation and implementation acceptance criteria remain open.
+**2A acceptance criteria:** Met by the approved design contract. It does not establish final source approval.
+
+## Milestone 2B.1 — First local ETL vertical slice
+
+**Status:** Implemented and locally smoke-tested on 2026-09-22. Source maturity remains bounded by its prior representative validation scope.
+
+**Verified scope:** Official 2025 Census boundary acquisition/parsing; official 2025 NLCD WCS window; 3DEP ImageServer AOI window; NRCS SDA clipped SSURGO mapunit/component query; immutable project AOI revisions; local job/retry records; external content-addressed raw responses/checksum event records; transparent per-source metrics and states; JSON/CSV/GeoJSON exports; deterministic tests.
+
+**Explicitly not delivered:** PostGIS schemas/migrations, catalog and safe canonical promotion, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval.
+
+**Acceptance evidence:** `pytest`, Ruff, mypy and CLI smoke pass; a live 0.00948 km² AOI job produced a completed result with official small-window NLCD/3DEP/SSURGO responses, correct Census union, and explicit PAD-US/FEMA unresolved states. See `PROJECT_STATE.md` and the external data directory; raw data is not committed.
+
+## Next smallest vertical slice — source version catalog and safe promotion
+
+Before adding more analytical layers, add a durable source/version/ingestion-run record and candidate-promotion path for the already implemented Census boundary or SSURGO query. It should pin each result to an immutable checksum-based version, keep failed or partial candidates inactive, preserve the last accepted version, and prove deterministic retry/idempotency. Build this on the planned repository/PostGIS foundation rather than expanding the temporary JSON store into a second permanent persistence system. Keep source scopes limited until PAD-US and FEMA gates close.
 
 ## Milestone 3 — Repository foundation and local platform
 

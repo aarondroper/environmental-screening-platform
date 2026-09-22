@@ -1,6 +1,6 @@
-# Screening workflow and product contract — Milestone 2A
+# Screening workflow and product contract — Milestone 2A / 2B
 
-**Status:** Design contract only; no application behavior, schema, API, adapter, or export is implemented. This contract advances product design under the owner's controlled 2A authorization; it does not close Milestone 1 or approve the final source set.
+**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement PostGIS/API/queue/frontend behavior.
 
 ## 1. Product boundary
 
@@ -65,6 +65,7 @@ Each source/AOI outcome and each reported feature/metric must use an explicit ob
 | --- | --- |
 | `constraint_observed` | One or more accepted, queryable source features/cells intersect the AOI. Report the source-defined category and measured metric; do not assign an overall risk level. |
 | `no_constraint_observed` | A successful query found no relevant features/classes **only within an AOI area known to be covered by a fit-for-purpose source version with complete applicable QA**. Display “none observed in [source/version]”; never present it as universal absence. |
+| `data_observed` | A descriptive source measurement (for example land-cover classes, elevation, or soil map-unit/component attributes) was successfully acquired and summarized. It is not necessarily a constraint observation. |
 | `not_covered` | The source's mapped/product footprint does not cover some or all of the AOI, or the provider explicitly marks it unmapped/not studied. That area is unknown, not a negative result. |
 | `unavailable` | Acquisition/query failed or access is blocked for this run. Do not emit a zero metric; show that no source observation was available. |
 | `pending_data` | Information is explicitly pending, proposed, or not yet effective. Report in a separate pending section; never merge it into effective conditions or treat pending absence/presence as effective status. |
@@ -123,7 +124,7 @@ Missing values are null with a reason and state, never silently coerced to zero.
 
 ## 7. Asynchronous job states and failure semantics
 
-The request path validates authorization-independent input shape and project/AOI references, pins AOI/source versions, creates a job, and returns promptly. The worker transitions `queued → processing → completed` or `queued/processing → failed`.
+The target request path validates input and references, pins AOI/source versions, creates a job, and returns promptly. The Milestone 2B CLI currently creates a file-backed job and invokes the local worker synchronously (job-oriented, not a separate asynchronous queue service). It transitions `queued → processing → completed` or `queued/processing → failed`.
 
 - `completed` means a valid result snapshot was persisted. It may contain source-level `unavailable`, `incomplete_source`, `pending_data`, or `geometry_quarantined` outcomes and warnings; these do not by themselves erase successful metrics from other sources.
 - `failed` means an execution/system failure prevented a valid result snapshot from being committed. Record a safe actionable error and preserve per-source attempt diagnostics.
@@ -134,7 +135,7 @@ The request path validates authorization-independent input shape and project/AOI
 ## 8. Exports and user presentation
 
 - Minimum exports remain CSV summary and GeoJSON spatial findings. An export carries project/AOI identity, source/version and retrieval dates, metric definitions/units, coverage and observation states, warnings, and preliminary-use limitations.
-- GeoJSON includes only geometries valid for output; quarantined original geometries are not exported as accepted findings. Include a separate QA/quarantine listing or explicit identifiers/reasons when the source result includes quarantines.
+- GeoJSON includes the AOI and only valid source geometries produced by the run. The current slice exports clipped SSURGO map-unit polygons, not component hydric ratings as spatially delineated features. Raster sources are summarized, not emitted as raster files. Quarantined original geometries are not exported as accepted findings. Include a separate QA/quarantine listing or explicit identifiers/reasons when an acquired source result includes per-AOI quarantines; a prior sample quarantine does not imply that the current AOI is affected.
 - Missing/unavailable/pending/incomplete states must remain explicit in CSV and JSON; do not omit a source row or serialize unknown as numeric zero.
 - GeoPackage and PDF remain optional product decisions and are not implemented here. Exports obey source redistribution terms and preserve attribution.
 
@@ -144,7 +145,7 @@ Every result view and export must state in plain language that this is prelimina
 
 ## 10. Source-specific adapter contracts (design only)
 
-All adapters are project-owned code to be implemented later; this document does not assert production readiness. Acquisition must be automated from official provider services/packages in the eventual application. The external artifacts and manifest currently available are fixtures for repeatable acquisition/validation tests only, not a permanent manual-download input path.
+All adapters are project-owned code. Initial automated adapters now exist for Census TIGER/Line, Annual NLCD, 3DEP, and SSURGO; they remain a local prototype, not production-ready or regional approval. PAD-US and FEMA have no acquisition adapter in this slice. Acquisition must be automated from official provider services/packages; external artifacts are fixtures only, not a permanent manual-download input path.
 
 ### Common adapter boundary
 
@@ -165,13 +166,13 @@ An adapter reports `access_blocked` for provider access failure, `not_acquired` 
 | --- | --- | --- |
 | FEMA NFHL | Query/download official NFHL metadata and effective products; acquire pending products separately; capture per-community and per-panel records and dates. Never rely on a user manually downloading files. | Validate schema/CRS, jurisdiction and panel coverage, effective date and status. Keep pending/effective distinct. Unknown/unmapped/unavailable areas stay unknown. Current state is `access_blocked`; no production adapter is proven. |
 | PAD-US 4.1 | Prefer the official complete state geodatabase or a complete authorized regional package; version the package and all included feature classes. If official service extraction is used later, prove it contains every required layer/feature and is complete for the region; do not treat the currently observed Fee-only service as the whole package. | Preserve raw geometry/attributes. Run deterministic `make_valid` only in staging; enforce nonempty/valid/polygonal output, unchanged attributes, absolute area delta ≤0.1% in EPSG:5070, and no unexpected topology/component-count change. Quarantine every failure visibly. Current status is `conditionally_validated`; full regional coverage is unverified. |
-| Annual NLCD C1.2 2025 | Automatically request official year-specific regional WCS/tile windows or official tile assets; capture collection/year, exact grid and request bounds. | Verify native grid/CRS, categorical class domains, nodata, coverage, and reproducible window alignment; regional clipping must not fetch a national historical bundle. Current representative service sample does not prove full regional coverage. |
-| USGS 3DEP 1/3 arc-second | Use the official TNM inventory to derive exact intersecting tiles and immutable item URLs; acquire only the required dated tiles/windows and clip/window in staging. | Verify tile IDs/dates/checksums, CRS, horizontal/vertical datum, units, resolution, nodata and coverage. Do not treat the current bounding-box byte sum as exact polygon-intersection inventory. |
-| NRCS SSURGO | Automatically query official SDA or obtain official survey-area packages for intersecting survey areas; preserve each survey-area release and related mapunit/component tables/geometry. | Verify per-SSA revisions, `mukey`/`cokey` relationships, `hydricrating`, `hydricon`, `comppct_r`, null population, CRS/scale and AOI coverage. Hydric attributes remain soil indicators, never wetlands mapping/determination. |
+| Annual NLCD C1.2 2025 | Implemented: official WCS 1.0.0 GetCoverage using the advertised `mrlc_Land-Cover_conus_year_data:Land-Cover_conus_year_data` offering, `time=2025-01-01T00:00:00.000Z`, and an AOI-bounded EPSG:3857 window. | Parse GeoTIFF response; verify CRS, categorical band, nodata, transform and AOI data cells. Class areas are estimated by transforming pixel cells to EPSG:5070. Per-request ceiling is 16 million cells; multi-window stitching and full regional coverage remain open. The request output is a projected WCS grid, not a preserved native Albers tile. |
+| USGS 3DEP 1/3 arc-second | Implemented prototype: official 3DEP ImageServer `exportImage` AOI window in EPSG:5070 at 10 m, bilinear interpolation, content hash and full request parameters recorded. | Validate TIFF, CRS, band, dimensions, nodata and cells; report elevation and Horn 3×3 slope. Per-request ceiling is 12 million cells. Returned imagery is resampled service output, not original dated tile bytes; exact contributing tile IDs/revisions and large-AOI tiling remain open. |
+| NRCS SSURGO | Implemented prototype: official SDA Post REST query with the documented `GetClippedMapunits` macro; retrieves AOI-clipped polygons plus mapunit/component attributes. | Verify required headers and values, valid polygonal clipped geometry, CRS and union coverage. Deduplicate component rows by `mukey`/`cokey`; preserve `hydricrating`, `hydricon`, `comppct_r`, nulls and raw response. Full survey-area release catalog/sizing remains open. Hydric attributes are soil indicators, never wetlands mapping/determination. |
 
 ## 11. Approval boundary and remaining validation
 
-Milestone 2A defines the contract under explicit source-maturity states; it does **not** constitute final source approval or permit application implementation. Final Milestone 1 approval remains open for:
+Milestone 2A defines the contract under explicit source-maturity states; the owner separately authorized a controlled Milestone 2B implementation before final source approval. That authorization does **not** close Milestone 1 or allow the implementation to imply complete source coverage. Final Milestone 1 approval remains open for:
 
 1. **PAD-US 4.1:** acquire the complete official regional package, enumerate all features intersecting the unchanged approved boundary, apply the already approved repair policy, and report actual regional accepted/quarantined counts and coverage implications.
 2. **FEMA NFHL:** establish an official technical access path and validate county/community coverage, effective/pending feature samples, schema, CRS, panels, and dates.

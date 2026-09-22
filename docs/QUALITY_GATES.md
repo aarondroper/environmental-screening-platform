@@ -4,17 +4,22 @@
 
 These gates define the checks an agent should consider before declaring work complete. Apply the gates proportionally to the change, but do not skip a relevant gate merely because the change appears small. A passing lint command is not evidence that data, scientific behavior, deployment, or UX is correct.
 
-## Governance-only repository baseline
+## Current Milestone 2B package baseline
 
-Until application files and tool configuration exist, the executable baseline is intentionally small:
+The repository has a local Python CLI/package and deterministic tests. From the repository root, use Python 3.12 for the configured type-check target:
 
-- inventory tracked/visible files and directories, including hidden project metadata;
-- inspect `git rev-parse --show-toplevel` and `git status --short --branch`; if either fails, record that Git state is unavailable rather than calling the checkout clean;
-- check that every documented local path used by governance files exists, and that relative Markdown links resolve where a link checker is available;
-- confirm that no application, dependency manifest, test runner, build script, CI workflow, container configuration, or deployment configuration is present before declaring those checks not applicable; and
-- record product tests, lint, type checks, builds, migrations, runtime smoke tests, and geospatial validation as unavailable/not applicable until the corresponding implementation exists.
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/ruff check .
+.venv/bin/pytest -q
+.venv/bin/mypy src
+.venv/bin/screening --help
+```
 
-Do not invent commands for tools that are not configured. A governance-only baseline can establish documentation consistency and repository inventory, but it cannot establish application correctness, scientific validity, deployment readiness, or performance.
+Tests use small generated geometries, rasters, and provider responses; they do not require internet, the personal toolkit, or the external source-artifact directory. The live AOI smoke run in `PROJECT_STATE.md` was separately run against official services and existing external Census data. It is evidence for that run only, not a standard offline test or regional source approval. There is not yet a configured database/migration, frontend, CI/CD, container, or deployment check; do not report those as passed or failed.
+
+Keep inventorying tracked/visible files, inspecting `git status`, checking documentation links/paths, and distinguishing unavailable checks from passing checks as those systems are added. Do not invent commands for tools that are not configured.
 
 ## Evidence and scope gate
 
