@@ -6,27 +6,29 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: no implementation milestone has verified its acceptance criteria. US candidate-region research is complete; Northern Colorado and the five-source MVP direction are owner-selected. Final representative artifact/boundary validation remains incomplete, so Milestone 1 is not closed and Milestone 2 has not begun.
+Current status: no implementation milestone has verified its acceptance criteria. Northern Colorado and the five-source MVP direction are owner-selected. The 2025 TIGER/Line boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded checks; PAD-US sample access/schema passed but three of five returned geometries self-intersect; FEMA NFHL remains access-blocked and has no effective/pending sample validation. Milestone 1 is partially validated and remains open; Milestone 2 has not begun.
 
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite
 
-**Status:** The previous England recommendation and NWI MVP source are superseded. Owner selected Northern Colorado (Boulder, Larimer, Weld; approx. 7,391 sq mi) and the five-source direction: FEMA NFHL, PAD-US, Annual NLCD, 3DEP, and SSURGO hydric-soil information. Official-record reuse evidence is available, but actual product samples, package scales/volumes, data-level CRS/schema/coverage and county-union topology have not been validated. Milestone 1 remains open pending that evidence. A local documentation baseline commit now exists; no remote is configured.
+**Status:** The England recommendation and NWI MVP source are superseded. Owner selected Northern Colorado (Boulder, Larimer, Weld; approx. 7,391 sq mi) and the five-source direction: FEMA NFHL, PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and SSURGO hydric-soil information. Exact TIGER/Line 2025 county geometries pass validation and retain all three union components. NLCD, one 3DEP tile, and SSURGO SDA samples passed representative checks. PAD-US has three self-intersections in five returned feature geometries; owner policy is needed before canonical promotion. FEMA official service/download access remains blocked. Milestone 1 is partially validated and open; Milestone 2 has not begun.
 
 **Objective:** Complete artifact-level validation of the owner-selected contained geography and approximately five authoritative public environmental sources before defining the screening contract.
 
 **Major deliverables:**
 
-- acquired 2025 Census county boundary data for GEOIDs 08013, 08069, and 08123; validate polygon and union topology, CRS and checksum without changing the selected extent;
-- exact source release/product artifacts or region-scoped samples for NFHL, PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and current SSURGO packages for every intersecting SSA;
-- verify actual archive/file integrity, formats, CRS, geometry/raster properties, key fields/domains, extents, coverage and measured approximate scale/volume;
+- exact TIGER/Line 2025 county geometry acquired; preserve archive/checksums outside Git and retain all multipart/detached components (validated; no narrowing);
+- official NFHL metadata and effective-feature samples for the three counties, preserving a distinct pending status;
+- source-specific representative artifacts and coverage/scale evidence for PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and SSURGO; identify all 19 SDA survey areas and confirm a repeatable regional extraction/volume approach;
+- resolve PAD-US invalid geometry handling with owner approval, then verify any staging repair/quarantine behavior and coverage effects;
+- verify source terms, formats, CRS, geometry/raster properties, key fields/domains, extents, coverage and measured/estimated scale and volume;
 - source-specific ingestion/QA design, including FEMA effective/pending and unknown coverage, regional raster windows, and SSURGO component hydric-rating lineage/interpretation;
 - retain source-specific public-use/redistribution evidence and release/effective-date provenance in project documentation.
 
-**Dependencies:** None beyond access to public source documentation/data.
+**Dependencies:** Public-source network access and an owner decision on PAD-US self-intersecting geometries. The geography gate is complete. FEMA NFHL access is independently blocked; continue no source substitution and do not narrow the approved extent.
 
-**Acceptance criteria:** County identity/vintage and union geometry validate; all five exact products have suitable public-use/redistribution terms and repeatable access; representative artifacts pass source-specific integrity, schema/CRS, coverage and scale checks; regional raster processing and total hosted/local volume are demonstrably bounded; no owner-level source or geography decision remains. NWI is outside the MVP and must not be silently reintroduced. Milestone 2 starts only after these criteria pass. Do not create a remote or push without owner authorization.
+**Acceptance criteria:** County identity/vintage and union geometry validate; all five exact products have suitable use/redistribution terms and repeatable access; representative artifacts pass source-specific integrity, schema/CRS, coverage and scale checks; PAD-US promotion behavior is explicitly approved; regional raster and soil processing/volume are bounded; FEMA effective, pending, mapped, and unknown coverage semantics are empirically validated; no owner-level source or geography decision remains. NWI is outside the MVP and must not be silently reintroduced. Milestone 2 starts only after these criteria pass. Do not create a remote or push without owner authorization.
 
 ## Milestone 2 — Screening workflow and product contract
 
