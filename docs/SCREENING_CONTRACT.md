@@ -122,6 +122,8 @@ Every completed screening result is an immutable snapshot tied to a project, AOI
 
 Missing values are null with a reason and state, never silently coerced to zero. Exact provider acquisition requests and hashes must be sufficient to identify the acquired source snapshot, subject to provider stability and terms. Store pending/effective FEMA product provenance as separate source-version records.
 
+Milestone 2B.2 persists a local metadata subset of this lineage in an external-directory SQLite catalog: ingestion runs/retries, acquisition attempts, checksum/release source versions, candidate artifact paths, candidate validation/coverage/error records, promotion decisions, and a per-source active-version pointer. Candidate acquisition is distinct from activation; failed or incomplete candidates remain queryable and cannot promote. This is not canonical PostGIS storage, and current screening jobs do not yet pin/use the catalog's active pointer.
+
 ## 7. Asynchronous job states and failure semantics
 
 The target request path validates input and references, pins AOI/source versions, creates a job, and returns promptly. The Milestone 2B CLI currently creates a file-backed job and invokes the local worker synchronously (job-oriented, not a separate asynchronous queue service). It transitions `queued → processing → completed` or `queued/processing → failed`.

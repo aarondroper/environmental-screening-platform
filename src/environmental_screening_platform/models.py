@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -55,6 +56,12 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def source_version_id(source_id: str, release: str, sha256: str) -> str:
+    """Stable identifier for one logical source release and exact artifact bytes."""
+    digest = hashlib.sha256(f"{source_id}\0{release}\0{sha256}".encode()).hexdigest()
+    return f"{source_id}:{digest}"
+
+
 @dataclass(frozen=True)
 class Acquisition:
     source_id: str
@@ -72,7 +79,7 @@ class Acquisition:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        data["version_id"] = f"{self.source_id}:{self.sha256}"
+        data["version_id"] = source_version_id(self.source_id, self.release, self.sha256)
         return data
 
 

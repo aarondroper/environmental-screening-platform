@@ -27,6 +27,20 @@ AOI input is GeoJSON WGS84 longitude/latitude with one valid Polygon or MultiPol
 
 The `screen` command is job-oriented but currently executes the local worker synchronously. It requests bounded AOI windows from official NLCD and 3DEP services and makes a bounded NRCS SDA query. Large AOIs over the current per-request cell ceiling produce explicit source failures/unknown coverage; automatic tiled stitching is not implemented. PAD-US is shown as conditionally validated/incomplete with prior sample quarantine counts; FEMA is shown as access-blocked/unavailable. Neither is silently replaced.
 
+Source ingestion is separately available as a candidate-first operator workflow. For example:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" ingest --source annual_nlcd --project-id PROJECT_ID
+.venv/bin/screening --data-dir "$DATA_DIR" ingestion-runs
+.venv/bin/screening --data-dir "$DATA_DIR" source-versions
+.venv/bin/screening --data-dir "$DATA_DIR" candidates --status quarantined
+.venv/bin/screening --data-dir "$DATA_DIR" candidate-status --candidate-id CANDIDATE_ID
+.venv/bin/screening --data-dir "$DATA_DIR" promote-candidate --candidate-id CANDIDATE_ID
+.venv/bin/screening --data-dir "$DATA_DIR" active-version --source annual_nlcd
+```
+
+`ingest` creates an inactive candidate; promotion is a separate explicit step. `retry-ingestion --run-id RUN_ID` creates a new linked run and preserves the prior attempt. Candidate metadata, acquisition attempts, validations, decisions, and the active-version pointer are stored transactionally in a local SQLite catalog under the external data directory. Artifacts are rehashed at registration and again before promotion. PAD-US remains quarantined/conditional and FEMA remains blocked; neither is acquired or promotable. This catalog is a local metadata/control store only: it does not load canonical spatial data to PostGIS, and the current `screen` job does not yet consume its active-version pointer.
+
 The exports are a JSON source/result record, CSV with one row per source and provenance/state, and GeoJSON with the AOI plus valid SSURGO map-unit polygons produced by that run. Hydric ratings remain component-level soil data, not a wetlands inventory or regulatory wetland determination. The result is preliminary; missing or incomplete data are not treated as no constraint, and no composite score is calculated.
 
 ## Current limits

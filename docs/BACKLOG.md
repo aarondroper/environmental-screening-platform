@@ -6,7 +6,7 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B now has a local file-backed ETL/screening slice; it is not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
+Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion. Neither is a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
 
 ## Milestone 1 — Geography and source feasibility
 
@@ -59,13 +59,21 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Verified scope:** Official 2025 Census boundary acquisition/parsing; official 2025 NLCD WCS window; 3DEP ImageServer AOI window; NRCS SDA clipped SSURGO mapunit/component query; immutable project AOI revisions; local job/retry records; external content-addressed raw responses/checksum event records; transparent per-source metrics and states; JSON/CSV/GeoJSON exports; deterministic tests.
 
-**Explicitly not delivered:** PostGIS schemas/migrations, catalog and safe canonical promotion, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval.
+**Explicitly not delivered:** PostGIS schemas/migrations, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval. The local metadata catalog and candidate promotion were added separately in Milestone 2B.2.
 
 **Acceptance evidence:** `pytest`, Ruff, mypy and CLI smoke pass; a live 0.00948 km² AOI job produced a completed result with official small-window NLCD/3DEP/SSURGO responses, correct Census union, and explicit PAD-US/FEMA unresolved states. See `PROJECT_STATE.md` and the external data directory; raw data is not committed.
 
-## Next smallest vertical slice — source version catalog and safe promotion
+## Milestone 2B.2 — Source-version records and safe candidate promotion
 
-Before adding more analytical layers, add a durable source/version/ingestion-run record and candidate-promotion path for the already implemented Census boundary or SSURGO query. It should pin each result to an immutable checksum-based version, keep failed or partial candidates inactive, preserve the last accepted version, and prove deterministic retry/idempotency. Build this on the planned repository/PostGIS foundation rather than expanding the temporary JSON store into a second permanent persistence system. Keep source scopes limited until PAD-US and FEMA gates close.
+**Status:** Implemented using a backend-neutral repository protocol and local SQLite metadata store under the external data directory. Records include ingestion/retry runs, acquisition attempts, checksum/release source versions, candidate validation/coverage/errors, promotion decisions, and active-version pointers. Promotion rechecks artifact integrity and requires successful validation and complete coverage; failed, partial, quarantined, and blocked outcomes remain queryable. SQLite is a local control-metadata implementation, not a replacement for PostGIS.
+
+**Verified scope:** CLI ingestion for Census, NLCD, 3DEP, and SSURGO; explicit non-acquired PAD-US quarantine and FEMA blocked records; list/inspect/retry/promote/active-version commands. Screen jobs still use their existing on-demand adapters and do not pin active catalog versions.
+
+**Acceptance evidence:** 32 deterministic tests, Ruff, mypy, CLI help, and no-network FEMA/PAD-US catalog status smokes passed. No provider data were acquired during this slice. See `PROJECT_STATE.md`.
+
+## Next smallest vertical slice — repository/PostGIS foundation
+
+Establish the first local PostGIS development repository and migration boundary behind explicit interfaces, then load one already-supported canonical source fixture and resolve its immutable source-version ID from a screening-job snapshot. Keep scope to one vector pathway (SSURGO map units or the Census boundary); absent active versions remain explicit unknown/unavailable. Do not add PAD-US/FEMA operational claims or new analytical metrics.
 
 ## Milestone 3 — Repository foundation and local platform
 

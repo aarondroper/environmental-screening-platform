@@ -66,6 +66,7 @@ def fetch_raw(
     json_body: dict[str, Any] | None = None,
     form_body: dict[str, Any] | None = None,
     media_type: str | None = None,
+    acquisition_callback: Callable[[Acquisition], None] | None = None,
 ) -> tuple[bytes, Acquisition]:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
@@ -158,4 +159,6 @@ def fetch_raw(
     event_hash = hashlib.sha256(event_json.encode("utf-8")).hexdigest()
     event_path = raw_path.parent / "acquisitions" / f"{event_hash}-{uuid4().hex}.json"
     write_json(event_path, acquisition.to_dict())
+    if acquisition_callback is not None:
+        acquisition_callback(acquisition)
     return body, acquisition

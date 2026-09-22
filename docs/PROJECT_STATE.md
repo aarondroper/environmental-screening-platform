@@ -2,12 +2,12 @@
 
 ## Snapshot status
 
-Verified on 2026-09-22 after Milestone 2B's first ETL vertical slice. This checkout now contains a small Python CLI/workflow and deterministic tests. It is a local prototype, not the deployed PostGIS/API/worker/web platform described by the product brief. Source maturity labels below remain bounded to their prior validation scopes; successful small-AOI smoke runs do not constitute final Milestone 1 source approval.
+Verified on 2026-09-22 after Milestone 2B.2, the local source-version and safe-promotion slice. This checkout contains a small Python CLI/workflow, a SQLite source metadata catalog, and deterministic tests. It is a local prototype, not the deployed PostGIS/API/worker/web platform described by the product brief. Source maturity labels below remain bounded to their prior validation scopes; ingestion success does not constitute final Milestone 1 source approval.
 
 ## Verified repository and Git state
 
 - Canonical root: this directory, with `AGENTS.md` and `docs/`.
-- Git: local repository on `master`, baseline before this work was `c6c834d`; no remote is configured. The coherent implementation/documentation commit is recorded in the Git history. No history was rewritten and no remote or push was created.
+- Git: local repository on `master`, implementation baseline before this work was `786b419`; no remote is configured. No history was rewritten and no remote or push was created.
 - Raw source responses and local workspace/project/job/export records are written under an external `--data-dir`; the CLI rejects a data directory within this repository. Raw artifacts are not Git inputs.
 - Toolkit was inspected as an optional reference only. No toolkit import, dependency, symlink, submodule, or modification exists.
 
@@ -15,15 +15,16 @@ Verified on 2026-09-22 after Milestone 2B's first ETL vertical slice. This check
 
 | Area | Verified behavior | Boundary / not yet implemented |
 | --- | --- | --- |
-| Python package and CLI | `pyproject.toml`, editable install, `screening` entry point; commands for project creation, AOI revision, screening, status, retry, and export | No web/API entry point |
+| Python package and CLI | `pyproject.toml`, editable install, `screening` entry point; project/AOI/screening/export plus source ingest, retry, version/run/candidate inspection, explicit promotion, and active-version commands | No web/API entry point |
 | Geography | Fetches official 2025 TIGER/Line county archive over HTTPS when no cached boundary exists; validates ZIP, CRS, GEOIDs 08013/08069/08123 and exact 3-component union; retains raw response by SHA-256 | Official route is the national county ZIP (about 84 MB), then only the three records are normalized; no silent boundary narrowing |
 | Projects/AOIs | External JSON records; WGS84 Polygon/MultiPolygon validation; containment by the approved complete county union; immutable revisions and input hash | No account/auth model, uploads, map UI, or database persistence |
-| Jobs | File-backed `queued → processing → completed/failed`, attempt records, immutable completed result, retry of failed jobs with the same AOI revision; independent provider failures become explicit source outcomes | Job execution is job-oriented but the CLI runs the worker synchronously; no queue, concurrent worker coordination, cancellation, or durable transactional database |
-| Raw acquisition/provenance | HTTPS-only bounded requests, same-host redirects, bounded retries for selected transient HTTP/network failures, content-addressed raw bytes, append-only acquisition event records with URL/request, retrieval time, release, bytes, terms URL and checksum | Does not yet implement conditional requests, broad provider pagination, archival retention policy, source catalog, or promotion transactions |
+| Jobs | File-backed `queued → processing → completed/failed`, attempt records, immutable completed result, retry of failed jobs with the same AOI revision; independent provider failures become explicit source outcomes | Job execution is job-oriented but the CLI runs the worker synchronously; no queue, concurrent worker coordination, cancellation, or transactional database for project/job/result records (the separate source metadata catalog is SQLite) |
+| Raw acquisition/provenance | HTTPS-only bounded requests, same-host redirects, bounded retries for selected transient HTTP/network failures, content-addressed raw bytes, append-only acquisition event records with URL/request, retrieval time, release, bytes, terms URL and checksum | No conditional requests, broad provider pagination, or archival retention policy |
+| Source version and ingestion catalog | Backend-neutral repository protocol with local SQLite metadata store outside Git; durable ingestion runs/retries, acquisition attempts, checksum/release versions, candidate artifact and validation records, promotion decisions, and per-source active pointer | Catalog tracks source metadata/control only; no PostGIS canonical geometry/raster promotion. Screening still performs on-demand acquisition and does not pin catalog active versions. SQLite is a local bridge, not the hosted database design |
 | Annual NLCD | Live smoke passed for a 2025 WCS 1.0 AOI window; categorical class counts/estimated EPSG:5070 ground area, nodata and returned grid metadata | Source maturity remains representative-sample `validated`; live regional completeness/native Albers volume unverified; 16M-cell request limit, no multi-window mosaic |
 | 3DEP | Live smoke passed for an AOI-clipped official ImageServer request; elevation distribution and 3×3 Horn slope on the returned 10 m EPSG:5070 grid | Source maturity remains representative-tile `validated`; response is bilinear-resampled, not raw tile bytes; tile IDs/underlying source-tile revisions are not captured; 12M-cell limit |
 | SSURGO | Live SDA Post REST query returned AOI-clipped map-unit polygons and component hydric attributes; records `mukey`, `cokey`, `comppct_r`, `hydricrating`, `hydricon`; deduplicates repeated component rows; reports polygon coverage and component indicators | Source maturity remains representative-query `validated`; no survey-area release/version catalog or complete three-county package sizing; hydric indicators are soil information, not wetlands mapping/determination |
-| PAD-US / FEMA | Both remain explicit source-result rows. PAD-US: `conditionally_validated`, unknown regional coverage and prior sample quarantine counts disclosed. FEMA: exact access-blocked wording retained, unavailable/unknown this run | No live PAD-US or FEMA acquisition/adapter; no substitute sources; no claim of regional PAD coverage or FEMA effective/pending validity |
+| PAD-US / FEMA | In screening results and catalog runs: PAD-US remains `conditionally_validated`, regionally unknown, and its three prior repaired candidates remain explicitly quarantined; FEMA retains exact access-blocked wording and unavailable/unknown status | No live PAD-US or FEMA acquisition adapter; their catalog entries are non-acquired quarantine/block records and cannot be promoted; no substitute sources or claim of regional PAD coverage/FEMA effective-pending validity |
 | Result and exports | JSON result with source maturity, validation scope, acquisition provenance, coverage/observation/attempt/job status and metrics; CSV includes state, provenance, metrics and limitations; GeoJSON includes AOI plus valid clipped SSURGO map-unit findings | Raster layers are summarized, not emitted as finding geometries; GeoJSON is not yet a full mapped output for PAD-US/FEMA or rasters |
 
 ### External live-smoke evidence
@@ -39,6 +40,10 @@ The small live AOI used for the end-to-end smoke was approximately 0.00948 km² 
 
 The end-to-end job completed and produced JSON, CSV, and GeoJSON exports. The same run listed PAD-US as conditionally validated/incomplete and FEMA as access blocked/unavailable. This is evidence that these small requests and parsing paths executed on 2026-09-22, not evidence of production reliability, final source approval, refresh repeatability, regional completeness, or legal redistribution review.
 
+### Source-catalog verification
+
+The 32-test deterministic suite uses small local fixture bytes; no provider requests or raw source artifacts are required. It verifies persistence after reopening the SQLite repository, acquisition/run/AOI/retry lineage fields, release-plus-content-hash version deduplication, failed-validation and checksum-mismatch retention, explicit PAD-US quarantine/FEMA block candidates, manual promotion gates, prior-active-version preservation, and idempotent promotion. CLI help and no-network PAD-US/FEMA catalog smoke commands were exercised. The catalog does not alter the source maturity values above.
+
 ## Selected sources and unresolved validation
 
 Owner-approved geography remains Boulder County (08013), Larimer County (08069), and Weld County (08123). Owner-approved MVP source direction remains FEMA NFHL, PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and NRCS SSURGO hydric-soil information. NWI is excluded. See `SOURCE_FEASIBILITY.md` for evidence and terms.
@@ -51,6 +56,6 @@ Owner-approved geography remains Boulder County (08013), Larimer County (08069),
 
 ## Current development frontier
 
-Milestone 2B's first local ETL path is implemented and smoke-tested for Census, NLCD, 3DEP, and SSURGO at the scopes above. The immediate frontier is hardening the source snapshot/version and coverage behavior and completing GIS findings/export boundaries without overstating any source. The next recommended work unit is a focused persistence/versioning slice: record source-version and validation-run entities with safe candidate promotion semantics, while keeping project/result output repeatable and source failures visible. A PostGIS/API/queue/web platform, deployment, and production source refresh remain future work.
+Milestone 2B.1's first local ETL path and Milestone 2B.2's durable metadata catalog/candidate-promotion workflow are implemented. The next frontier is the planned repository/PostGIS foundation, followed by loading canonical spatial candidates and binding screening results to immutable active source-version snapshots. Current screening still uses its existing live on-demand adapters; the new active-version pointer is not yet a screening input. PAD-US regional validation and FEMA access/effective-pending validation remain independent source-approval gates. API/queue/web platform, deployment, and production refresh remain future work.
 
 No composite score, regulatory determination, wetland finding, FEMA flood determination, or safety/suitability conclusion is implemented or permitted. Missing, unavailable, pending, incomplete, or quarantined data are never serialized as zero/absence. The full three-county region is not narrowed.

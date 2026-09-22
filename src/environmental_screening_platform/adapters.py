@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -75,7 +76,12 @@ def _acquisition(acquisition: Acquisition) -> dict[str, Any]:
     return acquisition.to_dict()
 
 
-def acquire_boundary(session: Any, data_root: Path) -> ProviderData:
+def acquire_boundary(
+    session: Any,
+    data_root: Path,
+    *,
+    acquisition_callback: Callable[[Acquisition], None] | None = None,
+) -> ProviderData:
     body, meta = fetch_raw(
         session,
         source_id="census_boundary",
@@ -87,6 +93,7 @@ def acquire_boundary(session: Any, data_root: Path) -> ProviderData:
         terms_url=TERMS["census_boundary"],
         max_bytes=120_000_000,
         media_type="application/zip",
+        acquisition_callback=acquisition_callback,
     )
     return parse_boundary_archive(body, meta)
 
@@ -165,7 +172,13 @@ def parse_boundary_archive(body: bytes, meta: Acquisition) -> ProviderData:
     )
 
 
-def acquire_nlcd(session: Any, data_root: Path, aoi_4326: Any) -> ProviderData:
+def acquire_nlcd(
+    session: Any,
+    data_root: Path,
+    aoi_4326: Any,
+    *,
+    acquisition_callback: Callable[[Acquisition], None] | None = None,
+) -> ProviderData:
     # WCS 1.0 uses the advertised offering name and native EPSG:3857 coverage grid.
     to_service = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True).transform
     aoi_service = transform(to_service, aoi_4326)
@@ -200,6 +213,7 @@ def acquire_nlcd(session: Any, data_root: Path, aoi_4326: Any) -> ProviderData:
         data_root=data_root,
         terms_url=TERMS["annual_nlcd"],
         max_bytes=256_000_000,
+        acquisition_callback=acquisition_callback,
     )
     if not meta.media_type.lower().startswith("image/tiff"):
         raise ValueError(f"NLCD WCS returned {meta.media_type}, not a GeoTIFF coverage")
@@ -282,7 +296,13 @@ def acquire_nlcd(session: Any, data_root: Path, aoi_4326: Any) -> ProviderData:
     )
 
 
-def acquire_3dep(session: Any, data_root: Path, aoi_4326: Any) -> ProviderData:
+def acquire_3dep(
+    session: Any,
+    data_root: Path,
+    aoi_4326: Any,
+    *,
+    acquisition_callback: Callable[[Acquisition], None] | None = None,
+) -> ProviderData:
     to_area = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True).transform
     aoi_area = transform(to_area, aoi_4326)
     minx, miny, maxx, maxy = aoi_area.bounds
@@ -313,6 +333,7 @@ def acquire_3dep(session: Any, data_root: Path, aoi_4326: Any) -> ProviderData:
         data_root=data_root,
         terms_url=TERMS["3dep"],
         max_bytes=256_000_000,
+        acquisition_callback=acquisition_callback,
     )
     if not meta.media_type.lower().startswith("image/tiff"):
         raise ValueError(f"3DEP image service returned {meta.media_type}, not a GeoTIFF coverage")
@@ -430,7 +451,13 @@ def _horn_slope(
     return np.degrees(np.arctan(np.hypot(dzdx, dzdy)))[stencil_valid]
 
 
-def acquire_ssurgo(session: Any, data_root: Path, aoi_4326: Any) -> ProviderData:
+def acquire_ssurgo(
+    session: Any,
+    data_root: Path,
+    aoi_4326: Any,
+    *,
+    acquisition_callback: Callable[[Acquisition], None] | None = None,
+) -> ProviderData:
     # SDA's published spatial helper returns map-unit keys; geometry and component tables
     # are joined in one provider-side query so no full survey-area packages are needed.
     wkt = aoi_4326.wkt.replace("'", "''")
@@ -456,6 +483,7 @@ def acquire_ssurgo(session: Any, data_root: Path, aoi_4326: Any) -> ProviderData
         max_bytes=64_000_000,
         form_body={"query": sql, "format": "JSON+COLUMNNAME"},
         media_type="application/json",
+        acquisition_callback=acquisition_callback,
     )
     parsed = json.loads(body)
     table = parsed.get("Table") if isinstance(parsed, dict) else None
