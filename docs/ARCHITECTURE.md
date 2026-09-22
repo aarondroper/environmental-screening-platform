@@ -159,6 +159,7 @@ The schema is expected to include concepts such as:
 - `projects`: analyst-created screening projects;
 - `project_areas`: project geometry and relevant geometry metadata;
 - `screening_jobs`: requested workflow, status, retry/error information, and timestamps;
+- `job_source_snapshots`: immutable per-job/AOI source-version resolution and missing-data state;
 - `screening_results`: per-dataset metrics, result geometries or references, and source-version lineage.
 
 Exact normalization, table names, geometry types, raster strategy, and retention rules are development decisions constrained by the selected sources.
@@ -169,7 +170,9 @@ PostGIS is a core architectural boundary, not a résumé-only dependency. The im
 
 ### Version activation
 
-The local catalog implements candidate-first acquisition metadata for Census, NLCD, 3DEP and SSURGO. The acquisition callback durably creates an `incomplete` candidate and checksum/release version before parsing; adapter validation finalizes that candidate as validated, failed, or incomplete. Each run, acquisition attempt, candidate validation and immutable `(source, release, SHA-256)` version is queryable; PAD-US quarantine and FEMA blocked outcomes are recorded without acquisition or promotion. Explicit promotion verifies candidate/run/validation/coverage/quarantine states and re-hashes the external artifact inside a SQLite `BEGIN IMMEDIATE` transaction before advancing the active-version pointer. Failed, partial, quarantined or blocked candidates cannot activate; version bytes and metadata are retained when a later version is promoted. Repeating a decision for the same candidate is idempotent. This does not load canonical geometry/raster data into PostGIS, and current screening still performs its existing on-demand acquisition rather than pinning catalog active versions; that integration remains future work.
+The local catalog implements candidate-first acquisition metadata for Census, NLCD, 3DEP and SSURGO. The acquisition callback durably creates an `incomplete` candidate and checksum/release version before parsing; adapter validation finalizes that candidate as validated, failed, or incomplete. Each run, acquisition attempt, candidate validation and immutable `(source, release, SHA-256)` version is queryable; PAD-US quarantine and FEMA blocked outcomes are recorded without acquisition or promotion. Explicit promotion verifies candidate/run/validation/coverage/quarantine states and re-hashes the external artifact inside a SQLite `BEGIN IMMEDIATE` transaction before advancing the active-version pointer. Failed, partial, quarantined or blocked candidates cannot activate; version bytes and metadata are retained when a later version is promoted. Repeating a decision for the same candidate is idempotent.
+
+When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 
 ## Processing pipelines
 
@@ -187,13 +190,13 @@ scheduled check
   -> expose status and logs
 ```
 
-The `screening ingest` CLI now runs an explicit source acquisition as an inactive candidate. Inspection commands list ingestion runs, source versions, candidates by source/status, acquisition attempts/validation from candidate detail, and the active version; `retry-ingestion` creates a new linked run instead of erasing the failed attempt. `promote-candidate` is a separate owner/operator action. PAD-US and FEMA commands record their current conditional/quarantined or access-blocked state without trying substitute sources. This local workflow does not yet perform source scheduling, provider change detection, canonical PostGIS loading, or active-version consumption by screening.
+The `screening ingest` CLI runs an explicit source acquisition as an inactive candidate. Inspection commands list ingestion runs, source versions, candidates by source/status, acquisition attempts/validation from candidate detail, and the active version; `retry-ingestion` creates a new linked run instead of erasing the failed attempt. `promote-candidate` is a separate owner/operator action. Screening job creation now snapshots the active pointer for every requested source, including explicit PAD-US quarantine and FEMA access-blocked states; execution and retry use those exact rows. This local workflow does not yet perform source scheduling, provider change detection, canonical PostGIS loading, or asynchronous queue execution.
 
 The pipeline must be retry-safe and idempotent. Failed candidates must not silently replace an active version.
 
 ### Screening pipeline
 
-The current CLI writes a `queued` job and invokes a synchronous local worker. Source failures are isolated and visible; the job can complete with warnings if a result snapshot was written. This is not an asynchronous service or queue.
+The current CLI writes a `queued` job and synchronously processes its already-persisted source snapshot. Missing active versions and unavailable artifacts remain source-level outcomes; they are never replaced by live acquisition or a newer candidate. This is not an asynchronous service or queue.
 
 ```text
 API accepts project/screening request (intended; not implemented)
@@ -243,4 +246,4 @@ The hosting provider, container runtime, database provider, object-storage provi
 
 ## Architecture decisions still required
 
-The geography and MVP source direction are owner-selected, but final source approval remains open for full regional PAD-US coverage/repair statistics and FEMA technical access plus effective/pending validation. Milestone 2B.2 metadata catalog does not close that gate or mean that source adapters are production-ready. Remaining choices include the PostGIS schema/migrations and canonical spatial promotion, binding screening jobs to immutable active-version snapshots, queue/worker library, raster storage strategy, authentication, hosting, source refresh schedule, exact large-AOI tiling behavior, and optional PDF reporting. Any added metrics or thresholds must stay within the existing contract and owner decision boundaries.
+The geography and MVP source direction are owner-selected, but final source approval remains open for full regional PAD-US coverage/repair statistics and FEMA technical access plus effective/pending validation. Milestones 2B.2–2B.3 metadata work does not close that gate or mean that source adapters are production-ready. Remaining choices include the PostGIS schema/migrations and canonical spatial promotion, loading canonical spatial data behind the existing immutable snapshots, queue/worker library, raster storage strategy, authentication, hosting, source refresh schedule, exact large-AOI tiling behavior, and optional PDF reporting. Any added metrics or thresholds must stay within the existing contract and owner decision boundaries.

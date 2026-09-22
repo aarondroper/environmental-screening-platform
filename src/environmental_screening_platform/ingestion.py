@@ -222,10 +222,12 @@ def ingest_source(
     status = _candidate_status(result)
     validation = {
         "validation_scope": result["validation_scope"],
+        "product_status": result["product_status"],
         "metrics": result["metrics"],
         "warnings": result["warnings"],
         "reason": result["reason"],
         "quarantined_count": len(result["quarantined_ids"]),
+        "features": result["features"],
         "source_provenance": result["provenance"],
     }
     if candidate_id is None:

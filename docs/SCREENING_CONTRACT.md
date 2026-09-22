@@ -122,7 +122,7 @@ Every completed screening result is an immutable snapshot tied to a project, AOI
 
 Missing values are null with a reason and state, never silently coerced to zero. Exact provider acquisition requests and hashes must be sufficient to identify the acquired source snapshot, subject to provider stability and terms. Store pending/effective FEMA product provenance as separate source-version records.
 
-Milestone 2B.2 persists a local metadata subset of this lineage in an external-directory SQLite catalog: ingestion runs/retries, acquisition attempts, checksum/release source versions, candidate artifact paths, candidate validation/coverage/error records, promotion decisions, and a per-source active-version pointer. Candidate acquisition is distinct from activation; failed or incomplete candidates remain queryable and cannot promote. This is not canonical PostGIS storage, and current screening jobs do not yet pin/use the catalog's active pointer.
+Milestones 2B.2–2B.3 persist a local metadata subset of this lineage in an external-directory SQLite catalog: ingestion runs/retries, acquisition attempts, checksum/release source versions, candidate artifact paths, candidate validation/coverage/error records, promotion decisions, a per-source active-version pointer, and immutable per-job source snapshots. Candidate acquisition is distinct from activation; failed or incomplete candidates remain queryable and cannot promote. Job creation resolves the active pointer for every requested source before processing. Retries reuse those snapshot rows; a new job is required for a fresh source snapshot. This is not canonical PostGIS storage.
 
 ## 7. Asynchronous job states and failure semantics
 

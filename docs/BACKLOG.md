@@ -6,7 +6,7 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion. Neither is a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
+Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
 
 ## Milestone 1 — Geography and source feasibility
 
@@ -59,7 +59,7 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Verified scope:** Official 2025 Census boundary acquisition/parsing; official 2025 NLCD WCS window; 3DEP ImageServer AOI window; NRCS SDA clipped SSURGO mapunit/component query; immutable project AOI revisions; local job/retry records; external content-addressed raw responses/checksum event records; transparent per-source metrics and states; JSON/CSV/GeoJSON exports; deterministic tests.
 
-**Explicitly not delivered:** PostGIS schemas/migrations, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval. The local metadata catalog and candidate promotion were added separately in Milestone 2B.2.
+**Explicitly not delivered:** PostGIS schemas/migrations, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval. The local metadata catalog and candidate promotion were added separately in Milestone 2B.2; immutable job source snapshots were added in 2B.3.
 
 **Acceptance evidence:** `pytest`, Ruff, mypy and CLI smoke pass; a live 0.00948 km² AOI job produced a completed result with official small-window NLCD/3DEP/SSURGO responses, correct Census union, and explicit PAD-US/FEMA unresolved states. See `PROJECT_STATE.md` and the external data directory; raw data is not committed.
 
@@ -67,13 +67,21 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Status:** Implemented using a backend-neutral repository protocol and local SQLite metadata store under the external data directory. Records include ingestion/retry runs, acquisition attempts, checksum/release source versions, candidate validation/coverage/errors, promotion decisions, and active-version pointers. Promotion rechecks artifact integrity and requires successful validation and complete coverage; failed, partial, quarantined, and blocked outcomes remain queryable. SQLite is a local control-metadata implementation, not a replacement for PostGIS.
 
-**Verified scope:** CLI ingestion for Census, NLCD, 3DEP, and SSURGO; explicit non-acquired PAD-US quarantine and FEMA blocked records; list/inspect/retry/promote/active-version commands. Screen jobs still use their existing on-demand adapters and do not pin active catalog versions.
+**Verified scope:** CLI ingestion for Census, NLCD, 3DEP, and SSURGO; explicit non-acquired PAD-US quarantine and FEMA blocked records; list/inspect/retry/promote/active-version commands. Screening-job binding to the active catalog pointer was deliberately delivered in Milestone 2B.3.
 
 **Acceptance evidence:** 32 deterministic tests, Ruff, mypy, CLI help, and no-network FEMA/PAD-US catalog status smokes passed. No provider data were acquired during this slice. See `PROJECT_STATE.md`.
 
+## Milestone 2B.3 — Immutable screening-job source snapshots
+
+**Status:** Implemented in the local SQLite catalog. Job creation resolves every requested source against the active pointer and stores immutable AOI/source snapshot rows before processing. Screening execution and retry use those exact rows; missing active versions, blocked/quarantined sources, unpromoted candidates, and disappeared artifacts remain explicit states. New job creation is the explicit fresh-snapshot operation.
+
+**Verified scope:** Source snapshot IDs and source-version lineage in JSON, CSV, and GeoJSON; PAD-US/FEMA controlled states; active-version isolation after later promotion; retry snapshot reuse; artifact checksum/availability handling. No source maturity was changed and no provider data was acquired in this slice.
+
+**Acceptance evidence:** 36 deterministic tests, Ruff, mypy, CLI help, documentation link checks, and `git diff --check` passed.
+
 ## Next smallest vertical slice — repository/PostGIS foundation
 
-Establish the first local PostGIS development repository and migration boundary behind explicit interfaces, then load one already-supported canonical source fixture and resolve its immutable source-version ID from a screening-job snapshot. Keep scope to one vector pathway (SSURGO map units or the Census boundary); absent active versions remain explicit unknown/unavailable. Do not add PAD-US/FEMA operational claims or new analytical metrics.
+Establish the first local PostGIS development repository and migration boundary behind explicit interfaces, then load one already-supported canonical source fixture and retain the immutable source-version ID from a screening-job snapshot. Keep scope to one vector pathway (SSURGO map units or the Census boundary); absent active versions remain explicit unknown/unavailable. Do not add PAD-US/FEMA operational claims or new analytical metrics.
 
 ## Milestone 3 — Repository foundation and local platform
 

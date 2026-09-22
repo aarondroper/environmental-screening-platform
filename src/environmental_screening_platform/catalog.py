@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
-from .models import Acquisition, source_version_id, utc_now
+from .models import MATURITY, Acquisition, source_version_id, utc_now
 
 
 class SourceRepository(Protocol):
@@ -82,6 +82,17 @@ class SourceRepository(Protocol):
     def list_attempts(self, run_id: str) -> list[dict[str, Any]]: ...
 
     def promote(self, candidate_id: str) -> dict[str, Any]: ...
+
+    def create_job_snapshots(
+        self,
+        *,
+        job_id: str,
+        aoi_id: str,
+        aoi_revision: int,
+        source_ids: list[str],
+    ) -> list[dict[str, Any]]: ...
+
+    def get_job_snapshots(self, job_id: str) -> list[dict[str, Any]]: ...
 
 
 def _json(value: Any) -> str:
@@ -220,6 +231,33 @@ class SQLiteSourceRepository:
                     version_id TEXT NOT NULL REFERENCES source_versions(version_id),
                     promoted_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS job_source_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL,
+                    aoi_id TEXT NOT NULL,
+                    aoi_revision INTEGER NOT NULL,
+                    source_id TEXT NOT NULL,
+                    version_id TEXT REFERENCES source_versions(version_id),
+                    candidate_id TEXT REFERENCES candidates(candidate_id),
+                    ingestion_run_id TEXT REFERENCES ingestion_runs(run_id),
+                    source_maturity TEXT NOT NULL,
+                    coverage_status TEXT NOT NULL,
+                    observation_status TEXT NOT NULL,
+                    snapshot_status TEXT NOT NULL CHECK(snapshot_status IN
+                        ('active','unknown','unavailable','incomplete','blocked','quarantined')),
+                    reason TEXT,
+                    snapshot_at TEXT NOT NULL,
+                    provenance_json TEXT NOT NULL,
+                    UNIQUE(job_id, source_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_job_source_snapshot
+                    ON job_source_snapshots(job_id, source_id);
+                CREATE TRIGGER IF NOT EXISTS immutable_job_source_snapshots_update
+                    BEFORE UPDATE ON job_source_snapshots
+                    BEGIN SELECT RAISE(ABORT, 'job source snapshots are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS immutable_job_source_snapshots_delete
+                    BEFORE DELETE ON job_source_snapshots
+                    BEGIN SELECT RAISE(ABORT, 'job source snapshots are immutable'); END;
                 CREATE INDEX IF NOT EXISTS idx_ingestion_source_time
                     ON ingestion_runs(source_id, started_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_candidate_source_status
@@ -642,6 +680,259 @@ class SQLiteSourceRepository:
                 (source_id,),
             ).fetchone()
         return _decode(row)
+
+    def create_job_snapshots(
+        self,
+        *,
+        job_id: str,
+        aoi_id: str,
+        aoi_revision: int,
+        source_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        """Resolve and persist one immutable active-version view for the entire job."""
+        if not source_ids or len(source_ids) != len(set(source_ids)):
+            raise ValueError("A job snapshot requires a nonempty unique source list")
+        now = utc_now()
+        with self._transaction() as db:
+            existing = db.execute(
+                "SELECT * FROM job_source_snapshots WHERE job_id=? ORDER BY source_id",
+                (job_id,),
+            ).fetchall()
+            if existing:
+                stored_sources = {row["source_id"] for row in existing}
+                if stored_sources != set(source_ids) or any(
+                    row["aoi_id"] != aoi_id or row["aoi_revision"] != aoi_revision
+                    for row in existing
+                ):
+                    raise ValueError(
+                        "An existing job cannot be rebound to a different source snapshot"
+                    )
+                return [self._snapshot_row(row) for row in existing]
+
+            for source_id in source_ids:
+                maturity = MATURITY.get(source_id, (None, ""))[0]
+                maturity_value = maturity.value if maturity is not None else "not_acquired"
+                latest = db.execute(
+                    """SELECT c.*,r.run_id,r.aoi_id,r.aoi_revision,r.project_id,r.adapter_version,
+                              r.status AS run_status,v.provider,v.provider_release,v.source_url,
+                              v.retrieved_at,v.media_type,v.sha256 AS version_sha256,
+                              v.byte_size AS version_byte_size,v.artifact_path AS version_artifact_path,
+                              v.terms_url,v.adapter_version AS version_adapter_version
+                       FROM candidates c JOIN ingestion_runs r USING(run_id)
+                       LEFT JOIN source_versions v ON v.version_id=c.version_id
+                       WHERE c.source_id=? ORDER BY c.created_at DESC,c.candidate_id LIMIT 1""",
+                    (source_id,),
+                ).fetchone()
+                active = db.execute(
+                    """SELECT v.*,a.promoted_at FROM active_versions a
+                       JOIN source_versions v USING(version_id) WHERE a.source_id=?""",
+                    (source_id,),
+                ).fetchone()
+                candidate = None
+                if active is not None:
+                    candidate = db.execute(
+                        """SELECT c.*,r.run_id,r.aoi_id,r.aoi_revision,r.project_id,r.adapter_version,
+                                  r.status AS run_status
+                           FROM candidates c JOIN ingestion_runs r USING(run_id)
+                           WHERE c.source_id=? AND c.version_id=? AND c.promotion_status='promoted'
+                           ORDER BY c.created_at DESC LIMIT 1""",
+                        (source_id, active["version_id"]),
+                    ).fetchone()
+
+                version_id = active["version_id"] if active is not None else None
+                candidate_id = candidate["candidate_id"] if candidate is not None else None
+                run_id = candidate["run_id"] if candidate is not None else None
+                coverage = "unknown"
+                observation = "not_assessed"
+                snapshot_status = "unknown"
+                reason: str | None = "No promoted active source version existed at job creation."
+                provenance: dict[str, Any] = {
+                    "snapshot_at": now,
+                    "requested_source_id": source_id,
+                }
+
+                if active is not None:
+                    provenance.update(
+                        {
+                            "provider": active["provider"],
+                            "provider_release": active["provider_release"],
+                            "source_url": active["source_url"],
+                            "retrieved_at": active["retrieved_at"],
+                            "media_type": active["media_type"],
+                            "sha256": active["sha256"],
+                            "byte_size": active["byte_size"],
+                            "artifact_path": active["artifact_path"],
+                            "terms_url": active["terms_url"],
+                            "adapter_version": active["adapter_version"],
+                            "promoted_at": active["promoted_at"],
+                        }
+                    )
+                    if candidate is None:
+                        snapshot_status = "incomplete"
+                        reason = "Active version has no promoted candidate validation record."
+                        maturity_value = "not_acquired"
+                        coverage = "unknown"
+                        observation = "incomplete_source"
+                    else:
+                        maturity_value = candidate["validation_status"]
+                        coverage = candidate["coverage_status"]
+                        observation = candidate["observation_status"]
+                        validation = json.loads(candidate["validation_json"])
+                        provenance["validation"] = validation
+                        provenance["candidate_id"] = candidate_id
+                        provenance["ingestion_run_id"] = run_id
+                        provenance["ingestion_aoi_id"] = candidate["aoi_id"]
+                        provenance["ingestion_aoi_revision"] = candidate["aoi_revision"]
+                        regional = source_id in {"annual_nlcd", "3dep", "ssurgo"}
+                        if regional and (
+                            candidate["aoi_id"] != aoi_id
+                            or candidate["aoi_revision"] != aoi_revision
+                        ):
+                            snapshot_status = "incomplete"
+                            reason = (
+                                "Active artifact was acquired for a different AOI revision; "
+                                "no substitute acquisition was attempted."
+                            )
+                        elif (
+                            candidate["status"] != "validated"
+                            or candidate["run_status"] != "validated"
+                        ):
+                            snapshot_status = "incomplete"
+                            reason = "Active candidate no longer has a validated ingestion record."
+                        elif coverage != "complete":
+                            snapshot_status = "incomplete"
+                            reason = f"Active candidate coverage is {coverage}, not complete."
+                        elif observation in {
+                            "unavailable",
+                            "incomplete_source",
+                            "not_assessed",
+                            "geometry_quarantined",
+                        }:
+                            snapshot_status = (
+                                "quarantined"
+                                if observation == "geometry_quarantined"
+                                else "incomplete"
+                            )
+                            reason = f"Active candidate observation status is {observation}."
+                        else:
+                            artifact = Path(active["artifact_path"]).resolve()
+                            try:
+                                artifact.relative_to(self.data_root)
+                                digest, size = _hash_file(artifact)
+                            except (OSError, ValueError):
+                                snapshot_status = "unavailable"
+                                reason = "Active source artifact is missing or outside the data directory."
+                                observation = "unavailable"
+                                coverage = "unavailable"
+                            else:
+                                if digest != active["sha256"] or size != active["byte_size"]:
+                                    snapshot_status = "unavailable"
+                                    reason = "Active source artifact failed its stored checksum/size check."
+                                    observation = "unavailable"
+                                    coverage = "unavailable"
+                                else:
+                                    snapshot_status = "active"
+                                    reason = None
+                elif latest is not None:
+                    candidate_id = latest["candidate_id"]
+                    run_id = latest["run_id"]
+                    maturity_value = latest["validation_status"]
+                    coverage = latest["coverage_status"]
+                    observation = latest["observation_status"]
+                    validation = json.loads(latest["validation_json"])
+                    provenance.update(
+                        {
+                            "latest_candidate_id": candidate_id,
+                            "latest_ingestion_run_id": run_id,
+                            "latest_candidate_status": latest["status"],
+                            "latest_validation": validation,
+                        }
+                    )
+                    if latest["status"] == "blocked":
+                        snapshot_status = "blocked"
+                        maturity_value = "access_blocked"
+                    elif latest["status"] == "quarantined":
+                        snapshot_status = "quarantined"
+                        maturity_value = "conditionally_validated"
+                    elif latest["status"] == "incomplete":
+                        snapshot_status = "incomplete"
+                    else:
+                        snapshot_status = "incomplete"
+                        reason = (
+                            "A candidate exists but is not an eligible active version; "
+                            "screening did not substitute it."
+                        )
+                    reason = (json.loads(latest["error_json"]) if latest["error_json"] else {}).get(
+                        "message", "No promoted active source version existed at job creation."
+                    )
+                elif source_id == "padus":
+                    maturity_value = "conditionally_validated"
+                    coverage = "unknown"
+                    observation = "geometry_quarantined"
+                    snapshot_status = "quarantined"
+                    provenance["validation"] = {
+                        "validation_scope": "Five-feature PAD-US repair sample only",
+                        "metrics": {
+                            "prior_validation_sample": {"repaired_candidates_quarantined": 3}
+                        },
+                        "quarantined_ids": [],
+                    }
+                    reason = (
+                        "PAD-US remains conditional: prior sample geometry candidates are quarantined "
+                        "and regional coverage is unverified; no active version is available."
+                    )
+                elif source_id == "fema_nfhl":
+                    maturity_value = "access_blocked"
+                    coverage = "unavailable"
+                    observation = "unavailable"
+                    snapshot_status = "blocked"
+                    reason = (
+                        "Selected source; provider access blocked; technical suitability and "
+                        "effective/pending sample validation incomplete."
+                    )
+
+                snapshot_id = str(uuid4())
+                db.execute(
+                    """INSERT INTO job_source_snapshots
+                       (snapshot_id,job_id,aoi_id,aoi_revision,source_id,version_id,candidate_id,
+                        ingestion_run_id,source_maturity,coverage_status,observation_status,
+                        snapshot_status,reason,snapshot_at,provenance_json)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        snapshot_id,
+                        job_id,
+                        aoi_id,
+                        aoi_revision,
+                        source_id,
+                        version_id,
+                        candidate_id,
+                        run_id,
+                        maturity_value,
+                        coverage,
+                        observation,
+                        snapshot_status,
+                        reason,
+                        now,
+                        _json(provenance),
+                    ),
+                )
+            rows = db.execute(
+                "SELECT * FROM job_source_snapshots WHERE job_id=? ORDER BY source_id", (job_id,)
+            ).fetchall()
+            return [self._snapshot_row(row) for row in rows]
+
+    @staticmethod
+    def _snapshot_row(row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["provenance"] = json.loads(item.pop("provenance_json"))
+        return item
+
+    def get_job_snapshots(self, job_id: str) -> list[dict[str, Any]]:
+        with self._database() as db:
+            rows = db.execute(
+                "SELECT * FROM job_source_snapshots WHERE job_id=? ORDER BY source_id", (job_id,)
+            ).fetchall()
+        return [self._snapshot_row(row) for row in rows]
 
     def promote(self, candidate_id: str) -> dict[str, Any]:
         with self._database() as db:

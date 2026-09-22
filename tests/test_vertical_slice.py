@@ -484,28 +484,18 @@ def test_project_aoi_revision_job_retry_unknown_handling_and_export(tmp_path: Pa
     )
 
     job = create_job(project_id, data_root, revision_one["aoi_id"])
-    with pytest.raises(KeyError):
-        run_job(
-            job["job_id"],
-            data_root,
-            adapters={"annual_nlcd": lambda *_: _fixture_provider("annual_nlcd")},
-        )
-    failed = read_json(data_root / f"workspace/jobs/{job['job_id']}/job.json")
-    assert failed["status"] == "failed"
-    assert [row["source_id"] for row in failed["source_attempts"]] == [
+    complete = run_job(job["job_id"], data_root)
+    assert complete["job_status"] == "completed"
+    assert complete["job_attempt"] == 1
+    assert len(complete["source_snapshot_ids"]) == 6
+    assert set(complete["sources_without_active_version"]) == {
         "census_boundary",
         "annual_nlcd",
-    ]
-    complete = retry_job(
-        job["job_id"],
-        data_root,
-        adapters={
-            name: (lambda *_, name=name: _fixture_provider(name))
-            for name in ("annual_nlcd", "3dep", "ssurgo")
-        },
-    )
-    assert complete["job_status"] == "completed"
-    assert complete["job_attempt"] == 2
+        "3dep",
+        "ssurgo",
+        "padus",
+        "fema_nfhl",
+    }
     assert [x["source_id"] for x in complete["source_results"]] == [
         "census_boundary",
         "annual_nlcd",
@@ -514,7 +504,7 @@ def test_project_aoi_revision_job_retry_unknown_handling_and_export(tmp_path: Pa
         "padus",
         "fema_nfhl",
     ]
-    assert complete["source_results"][-2]["observation_status"] == "incomplete_source"
+    assert complete["source_results"][-2]["observation_status"] == "geometry_quarantined"
     assert (
         complete["source_results"][-2]["metrics"]["prior_validation_sample"][
             "repaired_candidates_quarantined"
@@ -523,21 +513,27 @@ def test_project_aoi_revision_job_retry_unknown_handling_and_export(tmp_path: Pa
     )
     assert complete["source_results"][-1]["observation_status"] == "unavailable"
     assert complete["source_results"][-1]["metrics"] == {}
+    assert complete["source_results"][0]["snapshot_status"] == "unknown"
     assert "No composite suitability score" in complete["limitations_notice"]
 
     outputs = export_result(job["job_id"], data_root, tmp_path / "exports")
     assert len(outputs) == 3
     exported = json.loads(outputs[0].read_text())
     assert exported["source_results"][-1]["coverage_status"] == "unavailable"
+    assert exported["job_id"] == job["job_id"]
+    assert exported["source_snapshot_ids"] == complete["source_snapshot_ids"]
     csv_content = outputs[1].read_text()
-    assert "unavailable" in csv_content
-    assert "{}" in csv_content
+    assert "source_snapshot_id" in csv_content
+    assert "fema_nfhl" in csv_content and "blocked" in csv_content
     geojson = json.loads(outputs[2].read_text())
     assert geojson["type"] == "FeatureCollection"
     assert geojson["features"][0]["properties"]["feature_type"] == "aoi_boundary"
     assert (
         "absent source features are not a no-constraint conclusion" in geojson["properties"]["note"]
     )
+
+    with pytest.raises(ValueError, match="Only failed jobs"):
+        retry_job(job["job_id"], data_root)
 
 
 def test_raw_data_root_cannot_be_inside_repository(tmp_path: Path) -> None:
