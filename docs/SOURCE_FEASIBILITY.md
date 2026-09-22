@@ -93,3 +93,27 @@ All access dates below are **2026-09-22** unless the release date/effective date
 - [NRCS SSURGO table/column metadata PDF](https://www.nrcs.usda.gov/sites/default/files/2022-08/SSURGO-Metadata-Tables-and-Columns-Report.pdf): component fields, `component.comppct_r`, `hydricrating`, `hydricon`, and `cohydriccriteria` relation.
 - [NRCS National Technical Committee for Hydric Soils](https://www.nrcs.usda.gov/conservation-basics/soil/national-technical-committee-for-hydric-soils-ntchs): hydric-soil definition and need for vegetation and hydrology properties to classify wetlands.
 - [NRCS Web Soil Survey instructions](https://www.nrcs.usda.gov/conservation-basics/soil/getting-started-with-web-soil-survey): AOI definition and downloadable soil data.
+
+## Empirical access retry (2026-09-22)
+
+After initializing the authorized local Git baseline, a bounded HTTPS header request was attempted against each official retrieval/service route. DNS failed for every tested host; no HTTP connection, source response, or artifact was obtained. No further broad research or fallback download attempt was made.
+
+| Source | Unavailable host(s) tested |
+| --- | --- |
+| 2025 Census county geometry | `www2.census.gov`; `tigerweb.geo.census.gov` |
+| FEMA NFHL | `hazards.fema.gov` |
+| PAD-US | `www.usgs.gov` |
+| Annual NLCD | `www.mrlc.gov` |
+| 3DEP | `tnmaccess.nationalmap.gov` |
+| SSURGO | `nrcs.app.box.com`; `sdmdataaccess.sc.egov.usda.gov` |
+
+To resume without repeating source research, make those official hosts reachable from the canonical workspace, or provide the following small raw samples/metadata outside Git:
+
+1. 2025 Census TIGER county geometry containing only GEOIDs `08013`, `08069`, and `08123`, with original CRS and source metadata.
+2. FEMA NFHL service/layer metadata plus a small effective-feature sample from each of the three counties, including source CRS, community/panel identifiers, and effective/pending dates/status. Do not substitute preliminary features for effective samples.
+3. PAD-US 4.1 Colorado geodatabase metadata and a small sample of the relevant feature classes intersecting the county union; include the state-package listing/size or official index needed to bound acquisition.
+4. Annual NLCD Collection 1.2 2025 Land Cover: one small region-clipped GeoTIFF with its XML/product metadata, plus tile/window inventory or size information for the full three-county extent.
+5. 3DEP 1/3 arc-second: one intersecting GeoTIFF tile with its metadata, plus the intersecting tile inventory for the approved extent.
+6. SSURGO: a Web Soil Survey AOI package under the 100,000-acre limit containing map-unit polygons and tabular component/hydric fields, plus the list and package-size metadata for every SSA intersecting the three counties.
+
+Samples should be copied to a temporary or other explicitly untracked location. Keep provider files and metadata unmodified so checksums and raw provenance can be verified. Milestone 1 remains incomplete; none of the five sources or the county union has passed artifact-level validation, so Milestone 2 has not started.

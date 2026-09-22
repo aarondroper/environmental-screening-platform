@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This record preserves the consequential product and architecture directions that should survive across development sessions. It does not record trivial implementation choices. The checkout has no usable Git history or dated decision evidence, so these entries are current governance declarations carried by the project documents, not claims about when or by whom a historical decision was made. “Alternatives considered” describes the documented contrast for the direction, not an independently verified meeting record.
+This record preserves the consequential product and architecture directions that should survive across development sessions. It does not record trivial implementation choices. Git history currently contains only the documentation-baseline commit; there is no earlier history establishing the provenance of these entries. They are current governance declarations carried by the project documents, not claims about when or by whom a historical decision was made. “Alternatives considered” describes the documented contrast for the direction, not an independently verified meeting record.
 
 ## D001 — Make production geospatial engineering the project focus
 
@@ -158,7 +158,7 @@ This record preserves the consequential product and architecture directions that
 
 **Alternatives considered:** The owner has not selected an alternative NWI source. SSURGO hydric-soil information and proceeding with four sources are documented as options in `SOURCE_FEASIBILITY.md`, not adopted decisions.
 
-**Consequences:** The source list below is historical and is not the current MVP. Continue source/release validation under D014. Do not initialize, replace, or repair the invalid Git metadata without explicit authorization.
+**Consequences:** The source list below is historical and is not the current MVP. Continue source/release validation under D014. At the time, `.git/` was invalid and no repair was authorized; a later explicit owner instruction authorized initializing the local documentation baseline.
 
 ## D014 — Remove NWI from MVP and select SSURGO hydric-soil information instead
 
@@ -170,4 +170,4 @@ This record preserves the consequential product and architecture directions that
 
 **Alternatives considered:** NWI as a future optional source after rights clearance, another owner-approved environmental source, or fewer than five MVP sources. None is approved as a replacement for SSURGO at this time.
 
-**Consequences:** Validate the exact SSURGO packages, component attributes, source scale, access and volume for all intersecting survey areas, together with the other four selected sources, before Milestone 2. Preserve component-level hydric values and unknowns. Milestone 2 remains gated on representative artifact and boundary validation; Git metadata remains untouched absent explicit authorization.
+**Consequences:** Validate the exact SSURGO packages, component attributes, source scale, access and volume for all intersecting survey areas, together with the other four selected sources, before Milestone 2. Preserve component-level hydric values and unknowns. Milestone 2 remains gated on representative artifact and boundary validation. The local Git baseline was later initialized under explicit owner authorization; do not create a remote or push absent separate authorization.

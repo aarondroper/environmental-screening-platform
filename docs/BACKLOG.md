@@ -12,7 +12,7 @@ Current status: no implementation milestone has verified its acceptance criteria
 
 **Priority:** P0 — prerequisite
 
-**Status:** The previous England recommendation and NWI MVP source are superseded. Owner selected Northern Colorado (Boulder, Larimer, Weld; approx. 7,391 sq mi) and the five-source direction: FEMA NFHL, PAD-US, Annual NLCD, 3DEP, and SSURGO hydric-soil information. Official-record reuse evidence is available, but actual product samples, package scales/volumes, data-level CRS/schema/coverage and county-union topology have not been validated. Milestone 1 remains open pending that evidence. Git metadata remains invalid/unavailable and must not be repaired without authorization.
+**Status:** The previous England recommendation and NWI MVP source are superseded. Owner selected Northern Colorado (Boulder, Larimer, Weld; approx. 7,391 sq mi) and the five-source direction: FEMA NFHL, PAD-US, Annual NLCD, 3DEP, and SSURGO hydric-soil information. Official-record reuse evidence is available, but actual product samples, package scales/volumes, data-level CRS/schema/coverage and county-union topology have not been validated. Milestone 1 remains open pending that evidence. A local documentation baseline commit now exists; no remote is configured.
 
 **Objective:** Complete artifact-level validation of the owner-selected contained geography and approximately five authoritative public environmental sources before defining the screening contract.
 
@@ -26,7 +26,7 @@ Current status: no implementation milestone has verified its acceptance criteria
 
 **Dependencies:** None beyond access to public source documentation/data.
 
-**Acceptance criteria:** County identity/vintage and union geometry validate; all five exact products have suitable public-use/redistribution terms and repeatable access; representative artifacts pass source-specific integrity, schema/CRS, coverage and scale checks; regional raster processing and total hosted/local volume are demonstrably bounded; no owner-level source or geography decision remains. NWI is outside the MVP and must not be silently reintroduced. Milestone 2 starts only after these criteria pass; Git repair is not authorized by this milestone.
+**Acceptance criteria:** County identity/vintage and union geometry validate; all five exact products have suitable public-use/redistribution terms and repeatable access; representative artifacts pass source-specific integrity, schema/CRS, coverage and scale checks; regional raster processing and total hosted/local volume are demonstrably bounded; no owner-level source or geography decision remains. NWI is outside the MVP and must not be silently reintroduced. Milestone 2 starts only after these criteria pass. Do not create a remote or push without owner authorization.
 
 ## Milestone 2 — Screening workflow and product contract
 
@@ -63,12 +63,11 @@ The product contract must cover project/AOI behavior; transparent per-source met
 - queue/object-storage development equivalents if retained;
 - dependency and environment documentation;
 - migration tooling foundation;
-- valid Git repository metadata and an initial tracked baseline (only in a canonical owner-provided worktree or after explicit owner authorization; do not repair the current metadata autonomously);
 - baseline lint, type, test, and build commands.
 
 **Dependencies:** Milestones 1–2 for source- and workflow-aware boundaries.
 
-**Acceptance criteria:** A fresh checkout can start the documented local services and execute baseline checks without relying on the toolkit or undocumented local state.
+**Acceptance criteria:** A fresh checkout can start the documented local services and execute baseline checks without relying on the toolkit or undocumented local state. The local Git governance baseline already exists; remote hosting remains outside this milestone absent authorization.
 
 ## Milestone 4 — Data model, migrations, and source catalog
 

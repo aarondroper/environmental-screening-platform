@@ -1,5 +1,7 @@
 # Final source and geography validation
 
+> Historical completion state as of the validation pass; the owner later authorized local Git initialization, recorded in the current project snapshot.
+
 **Completed:** 2026-09-22 — research/documentation complete; source-validation acceptance gate remains open.
 
 ## Objective
