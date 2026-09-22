@@ -14,6 +14,21 @@ python3.12 -m venv .venv
 .venv/bin/mypy src
 ```
 
+The local PostGIS boundary is optional and is not required for the deterministic test suite. It uses the pinned `postgis/postgis:16-3.4` image, an external bind-mounted data directory, and credentials supplied through the environment; no credentials are committed. With Docker and the optional client installed:
+
+```bash
+export POSTGIS_USER=screening
+export POSTGIS_PASSWORD='set-a-local-password'
+export POSTGIS_DB=screening
+export ESGP_POSTGIS_DATA_DIR=/home/aarondroper/projects/environmental-screening-platform-data/postgis
+export ESGP_POSTGIS_URL='postgresql://screening:set-a-local-password@localhost:5432/screening'
+.venv/bin/python -m pip install -e '.[dev,postgis]'
+docker compose up -d postgis
+.venv/bin/screening --data-dir "$DATA_DIR" postgis-migrate
+```
+
+The boundary loader requires explicit SQLite-owned identifiers and preserves all three 2025 Census county components while storing their canonical union. For an approved external artifact, use `postgis-load-boundary` with the exact `source_snapshot_id` and `source_version_id`; the loader records the EPSG:4269 source geometry, EPSG:4326 canonical geometry, and EPSG:5070 analysis-area metadata. The PostGIS volume and source artifact remain outside Git.
+
 All runtime records and raw source responses must live outside this repository. For example:
 
 ```bash
@@ -45,4 +60,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no PostGIS, database migration history, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. Live small-AOI source requests are not final source approval, production validation, or regional coverage proof. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is only an optional local repository boundary; Docker/psycopg availability is environment-dependent. Live small-AOI source requests are not final source approval, production validation, or regional coverage proof. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.

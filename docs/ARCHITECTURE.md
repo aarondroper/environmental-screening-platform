@@ -16,7 +16,7 @@ The platform should be a coherent small application whose sophistication comes f
 
 ## Verified current boundary
 
-Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window, 3DEP ImageServer window, SSURGO SDA query, JSON project/AOI/job state, provenance/raw-byte storage, metrics, and exports. It stores operational data only under a caller-supplied external data directory. There is no API, PostGIS database, queue/worker service, frontend, deployment, or canonical data promotion boundary. The architecture diagram remains the intended target, not an implementation diagram.
+Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window, 3DEP ImageServer window, SSURGO SDA query, JSON project/AOI/job state, provenance/raw-byte storage, metrics, exports, and an optional PostGIS AOI repository boundary. It stores operational data only under a caller-supplied external data directory. There is no deployed database, API, queue/worker service, frontend, or environmental canonical data promotion. The architecture diagram remains the intended target, not an implementation diagram.
 
 ### Verified local execution boundary (Milestone 2B)
 
@@ -52,8 +52,8 @@ The diagram is an intended boundary model, not a verified deployment diagram.
 | --- | --- | --- |
 | Backend language | Python package and CLI | Implemented prototype; production backend/API not implemented |
 | API | FastAPI with typed schemas and OpenAPI | Strongly preferred; not implemented |
-| Database | PostgreSQL + PostGIS | Core requirement; not implemented |
-| Migrations | Alembic | Strongly preferred; not implemented |
+| Database | PostgreSQL + PostGIS | Local AOI schema boundary implemented; hosted database and environmental source schema not implemented |
+| Migrations | Alembic / SQL migration boundary | First local SQL migration implemented; Alembic history not implemented |
 | Geospatial processing | Rasterio, NumPy, Shapely, PyProj, pyshp; SQL/PostGIS later | Initial local dependencies implemented; source-dependent expansion |
 | Frontend | React + TypeScript | Strongly preferred; not implemented |
 | Mapping | MapLibre | Strongly preferred; not implemented |
@@ -146,7 +146,9 @@ external source
 
 Raw source material should retain acquisition time, source identity, original metadata where useful, checksum, and source version/release information when available. Raw data is not expected to be committed to Git.
 
-The local slice implements this as an external filesystem raw store with content-addressed response bytes and append-only acquisition event JSON. Project, AOI, job, result, CSV, and GeoJSON files also live under that external directory. Milestone 2B.2 adds a backend-neutral `SourceRepository` interface with a local SQLite metadata implementation under `catalog/`; SQLite transactions serialize candidate registration and promotion. This local catalog stores control/provenance metadata only, not canonical spatial layers. Raw files have no object-lock or retention guarantee, and the existing JSON project/job store still has no concurrent-worker or multi-record transaction guarantee. PostGIS remains the intended canonical spatial store and hosted repository target.
+The local slice implements this as an external filesystem raw store with content-addressed response bytes and append-only acquisition event JSON. Project, AOI, job, result, CSV, and GeoJSON files also live under that external directory. Milestone 2B.2 adds a backend-neutral `SourceRepository` interface with a local SQLite metadata implementation under `catalog/`; SQLite transactions serialize candidate registration and promotion. Milestone 2B.4 adds a separate optional `SpatialRepository` interface with a local PostGIS implementation under `spatial.py`; it stores canonical AOI geometry only and links to SQLite-owned source snapshot/version IDs as text, with no cross-database foreign keys. Raw files have no object-lock or retention guarantee, and the existing JSON project/job store still has no concurrent-worker or multi-record transaction guarantee. PostGIS remains the intended canonical spatial store and hosted repository target.
+
+The local PostGIS setup is `postgis/postgis:16-3.4` with a health check and an externally configured bind-mounted data directory. Credentials and the connection URL are environment-provided. Migration `001_aoi_revisions.sql` creates the first schema boundary: canonical AOI revisions, preserved source components, spatial indexes, validity constraints, source/analysis CRS metadata, and provenance. The Census boundary loader transforms preserved EPSG:4269 county geometries to EPSG:4326 canonical geometry and measures area in EPSG:5070; it does not narrow, repair, or silently discard the approved counties.
 
 ### Conceptual database entities
 
@@ -246,4 +248,4 @@ The hosting provider, container runtime, database provider, object-storage provi
 
 ## Architecture decisions still required
 
-The geography and MVP source direction are owner-selected, but final source approval remains open for full regional PAD-US coverage/repair statistics and FEMA technical access plus effective/pending validation. Milestones 2B.2–2B.3 metadata work does not close that gate or mean that source adapters are production-ready. Remaining choices include the PostGIS schema/migrations and canonical spatial promotion, loading canonical spatial data behind the existing immutable snapshots, queue/worker library, raster storage strategy, authentication, hosting, source refresh schedule, exact large-AOI tiling behavior, and optional PDF reporting. Any added metrics or thresholds must stay within the existing contract and owner decision boundaries.
+The geography and MVP source direction are owner-selected, but final source approval remains open for full regional PAD-US coverage/repair statistics and FEMA technical access plus effective/pending validation. Milestones 2B.2–2B.4 metadata/spatial-boundary work does not close that gate or mean that source adapters are production-ready. Remaining choices include loading normalized environmental source data behind immutable snapshots, queue/worker library, raster storage strategy, authentication, hosting, source refresh schedule, exact large-AOI tiling behavior, and optional PDF reporting. Any added metrics or thresholds must stay within the existing contract and owner decision boundaries.

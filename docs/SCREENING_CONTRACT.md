@@ -1,6 +1,6 @@
 # Screening workflow and product contract — Milestone 2A / 2B
 
-**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement PostGIS/API/queue/frontend behavior.
+**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus the first optional PostGIS AOI schema boundary; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement environmental PostGIS source tables/API/queue/frontend behavior.
 
 ## 1. Product boundary
 

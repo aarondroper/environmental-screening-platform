@@ -6,7 +6,7 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
+Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot; 2B.4 adds an optional local PostGIS AOI repository boundary. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
 
 ## Milestone 1 — Geography and source feasibility
 
@@ -59,7 +59,7 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Verified scope:** Official 2025 Census boundary acquisition/parsing; official 2025 NLCD WCS window; 3DEP ImageServer AOI window; NRCS SDA clipped SSURGO mapunit/component query; immutable project AOI revisions; local job/retry records; external content-addressed raw responses/checksum event records; transparent per-source metrics and states; JSON/CSV/GeoJSON exports; deterministic tests.
 
-**Explicitly not delivered:** PostGIS schemas/migrations, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval. The local metadata catalog and candidate promotion were added separately in Milestone 2B.2; immutable job source snapshots were added in 2B.3.
+**Explicitly not delivered by this first ETL slice:** environmental PostGIS source tables, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval. The local AOI PostGIS schema boundary was added separately in Milestone 2B.4; the local metadata catalog and candidate promotion were added in 2B.2 and immutable job source snapshots in 2B.3.
 
 **Acceptance evidence:** `pytest`, Ruff, mypy and CLI smoke pass; a live 0.00948 km² AOI job produced a completed result with official small-window NLCD/3DEP/SSURGO responses, correct Census union, and explicit PAD-US/FEMA unresolved states. See `PROJECT_STATE.md` and the external data directory; raw data is not committed.
 
@@ -79,9 +79,17 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Acceptance evidence:** 36 deterministic tests, Ruff, mypy, CLI help, documentation link checks, and `git diff --check` passed.
 
-## Next smallest vertical slice — repository/PostGIS foundation
+## Milestone 2B.4 — Local PostGIS AOI repository boundary
 
-Establish the first local PostGIS development repository and migration boundary behind explicit interfaces, then load one already-supported canonical source fixture and retain the immutable source-version ID from a screening-job snapshot. Keep scope to one vector pathway (SSURGO map units or the Census boundary); absent active versions remain explicit unknown/unavailable. Do not add PAD-US/FEMA operational claims or new analytical metrics.
+**Status:** Implemented as an optional local setup and repository boundary. SQLite remains the control plane. A pinned PostGIS Compose service, external data volume, first migration, canonical AOI/component schema, explicit cross-database source snapshot/version identifiers, and a validated Census three-county fixture loader are present.
+
+**Verified scope:** Pure-Python boundary/fixture validation, migration and Compose configuration checks, idempotency and linkage contracts, and an opt-in PostGIS integration test. The deterministic fixture preserves all three county components and the three-component union; the loader records EPSG:4269 source, EPSG:4326 canonical, and EPSG:5070 analysis-area semantics. No environmental source tables or scoring were added.
+
+**Environment limitation:** Docker is not integrated with this WSL session and psycopg is not installed, so the real PostGIS migration/insertion test was skipped. No PostGIS database execution is claimed. The external validated Census artifact remains outside Git.
+
+## Next smallest vertical slice — canonical environmental source fixture
+
+Load one validated normalized environmental source fixture—prefer the SSURGO map-unit/component pathway—into the PostGIS canonical boundary using an existing immutable source snapshot/version. Preserve source attributes and hydric-soil semantics, make the load idempotent and transaction-safe, and keep absent active versions explicit unknown/unavailable. Do not add PAD-US/FEMA operational claims or new analytical metrics.
 
 ## Milestone 3 — Repository foundation and local platform
 

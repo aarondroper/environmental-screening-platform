@@ -10,6 +10,7 @@ from typing import Any
 
 from .catalog import SQLiteSourceRepository
 from .ingestion import REQUEST_URLS, ingest_source, retry_ingestion
+from .spatial import PostGISRepository, census_boundary_record
 from .workflow import (
     create_job,
     create_project,
@@ -90,6 +91,22 @@ def _parser() -> argparse.ArgumentParser:
     active = sub.add_parser("active-version", help="Show the active source version, if any")
     active.add_argument("--source", required=True)
 
+    postgis_migrate = sub.add_parser(
+        "postgis-migrate", help="Apply the local canonical spatial schema to PostGIS"
+    )
+    postgis_migrate.add_argument("--database-url")
+
+    load_boundary = sub.add_parser(
+        "postgis-load-boundary", help="Load the validated three-county boundary into PostGIS"
+    )
+    load_boundary.add_argument("--database-url")
+    load_boundary.add_argument("--boundary", type=Path, required=True)
+    load_boundary.add_argument("--project-id", required=True)
+    load_boundary.add_argument("--aoi-id", required=True)
+    load_boundary.add_argument("--aoi-revision", type=int, required=True)
+    load_boundary.add_argument("--source-snapshot-id", required=True)
+    load_boundary.add_argument("--source-version-id", required=True)
+
     return parser
 
 
@@ -133,6 +150,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = SQLiteSourceRepository(args.data_dir).promote(args.candidate_id)
     elif args.command == "active-version":
         outcome = SQLiteSourceRepository(args.data_dir).get_active(args.source)
+    elif args.command == "postgis-migrate":
+        PostGISRepository(args.database_url).migrate()
+        outcome = {"status": "migrated"}
+    elif args.command == "postgis-load-boundary":
+        repository = PostGISRepository(args.database_url)
+        repository.migrate()
+        record = census_boundary_record(
+            args.boundary,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+            aoi_revision=args.aoi_revision,
+            source_snapshot_id=args.source_snapshot_id,
+            source_version_id=args.source_version_id,
+        )
+        outcome = repository.insert_aoi_revision(record)
     else:  # pragma: no cover - argparse prevents this branch
         raise AssertionError(args.command)
     print(json.dumps(outcome, indent=2, sort_keys=True, default=str))
