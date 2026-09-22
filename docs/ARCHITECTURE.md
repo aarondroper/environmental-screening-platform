@@ -98,7 +98,7 @@ Source-specific adapters should encapsulate acquisition and parsing differences 
 - source-specific schema and spatial validation;
 - reproducible staging into canonical structures.
 
-The exact adapter interfaces remain unchosen. Geography is validated and representative acquisition tests have established candidate patterns, but FEMA access and complete regional PAD-US package access still block final source approval.
+The product contract and common/source-specific adapter boundaries are now defined in `docs/SCREENING_CONTRACT.md` under Milestone 2A; no implementation exists. Geography is validated and representative acquisition tests have established candidate patterns, but FEMA access and complete regional PAD-US package access still block final source approval.
 
 #### Evidence-informed source acquisition assumptions (not implemented)
 
@@ -107,6 +107,8 @@ The exact adapter interfaces remain unchosen. Geography is validated and represe
 - **3DEP:** TNM lists dated 1/3-arc-second one-degree GeoTIFFs with per-item sizes. One tile is 413.48 MB; the region bounding-box inventory is eight tiles/about 3.07 GB, an upper bound pending exact polygon tile intersection. Keep tile date/checksum provenance and window downstream processing.
 - **SSURGO:** official SDA spatial queries locate map units and survey areas and return map-unit WKT plus component attributes. The union intersects 19 survey areas (1,878 map units across those whole areas); a small query returned component/hydric fields. Preserve `mukey`/`cokey`, `comppct_r`, rating nulls, and per-area release metadata. Full survey-area package byte totals remain unmeasured.
 - **FEMA NFHL:** no service data or sample was obtained. Effective and pending products remain separate; missing coverage stays unknown. No FEMA adapter assumptions beyond provider metadata are validated.
+
+The product-facing maturity vocabulary (`validated`, `conditionally_validated`, `access_blocked`, `failed`, `not_acquired`), separate AOI coverage states, and missing-data outcomes are specified in `docs/SCREENING_CONTRACT.md`. They are design contracts only, not runtime state or database enums.
 
 ### Screening engine
 
@@ -225,4 +227,4 @@ The hosting provider, container runtime, database provider, object-storage provi
 
 ## Architecture decisions still required
 
-The geography and MVP source direction are owner-selected, but exact regional artifacts still require representative validation before schema details are finalized. Later owner/development decisions include queue/worker library, raster storage strategy, authentication, hosting, source refresh schedule, screening immutability/re-screening behavior, export formats, and whether PDF reporting is retained. Screening metric interpretation, especially SSURGO hydric components, must be defined in Milestone 2 without implying wetland determinations or inventing thresholds.
+The geography and MVP source direction are owner-selected, but final source approval remains open for full regional PAD-US coverage/repair statistics and FEMA technical access plus effective/pending validation. Milestone 2A has defined the initial screening workflow, metric semantics, provenance, uncertainty, and adapter contracts in `docs/SCREENING_CONTRACT.md`; this controlled progression does not imply final source approval or implementation readiness. Later owner/development decisions include queue/worker library, raster storage strategy, authentication, hosting, source refresh schedule, screening immutability/re-screening behavior, export formats, and whether PDF reporting is retained. The contract must be rechecked against full regional source evidence before implementation.
