@@ -118,8 +118,11 @@ class PostGISRepository:
             raise PostGISUnavailable(
                 "psycopg is not installed; install the optional postgis dependency"
             ) from exc
+        database_url = self.database_url
+        if database_url is None:  # pragma: no cover - constructor validates this
+            raise PostGISUnavailable("PostGIS connection URL is not configured")
         try:
-            return psycopg.connect(self.database_url)
+            return psycopg.connect(database_url)
         except Exception as exc:  # pragma: no cover - depends on optional service
             raise PostGISUnavailable(f"PostGIS connection failed: {exc}") from exc
 

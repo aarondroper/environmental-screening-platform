@@ -83,9 +83,9 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Status:** Implemented as an optional local setup and repository boundary. SQLite remains the control plane. A pinned PostGIS Compose service, external data volume, first migration, canonical AOI/component schema, explicit cross-database source snapshot/version identifiers, and a validated Census three-county fixture loader are present.
 
-**Verified scope:** Pure-Python boundary/fixture validation, migration and Compose configuration checks, idempotency and linkage contracts, and an opt-in PostGIS integration test. The deterministic fixture preserves all three county components and the three-component union; the loader records EPSG:4269 source, EPSG:4326 canonical, and EPSG:5070 analysis-area semantics. No environmental source tables or scoring were added.
+**Verified scope:** Pure-Python boundary/fixture validation, migration and Compose configuration checks, and real PostGIS execution against `postgis/postgis:16-3.4`. The validated Census artifact loaded successfully with all three county components and a valid three-component union; direct queries verified EPSG:4269 source geometry, EPSG:4326 canonical geometry, EPSG:5070 analysis-area semantics, explicit source snapshot/version linkage, idempotent reload, and transaction rollback without partial records. The opt-in integration test passed. No environmental source tables or scoring were added.
 
-**Environment limitation:** Docker is not integrated with this WSL session and psycopg is not installed, so the real PostGIS migration/insertion test was skipped. No PostGIS database execution is claimed. The external validated Census artifact remains outside Git.
+**Runtime evidence:** Docker Desktop WSL integration and the optional psycopg dependency were available on 2026-09-23. The real migration, boundary load, direct PostGIS queries, idempotent reload, failed-transaction rollback, and integration test passed. The database volume and validated Census artifact remain outside Git; this does not establish a deployed database or environmental source-table implementation.
 
 ## Next smallest vertical slice — canonical environmental source fixture
 
