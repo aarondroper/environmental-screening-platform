@@ -11,6 +11,7 @@ from typing import Any
 from .catalog import SQLiteSourceRepository
 from .ingestion import REQUEST_URLS, ingest_source, retry_ingestion
 from .spatial import PostGISRepository, census_boundary_record
+from .ssurgo import parse_ssurgo_fixture
 from .workflow import (
     create_job,
     create_project,
@@ -107,6 +108,19 @@ def _parser() -> argparse.ArgumentParser:
     load_boundary.add_argument("--source-snapshot-id", required=True)
     load_boundary.add_argument("--source-version-id", required=True)
 
+    load_ssurgo = sub.add_parser(
+        "postgis-load-ssurgo-fixture",
+        help="Stage, validate, and fixture-promote a representative SSURGO response",
+    )
+    load_ssurgo.add_argument("--database-url")
+    load_ssurgo.add_argument("--fixture", type=Path, required=True)
+    load_ssurgo.add_argument("--metadata", type=Path)
+    load_ssurgo.add_argument("--batch-id", required=True)
+    load_ssurgo.add_argument("--source-snapshot-id", required=True)
+    load_ssurgo.add_argument("--source-version-id", required=True)
+    load_ssurgo.add_argument("--ingestion-run-id")
+    load_ssurgo.add_argument("--candidate-id")
+
     return parser
 
 
@@ -165,6 +179,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_version_id=args.source_version_id,
         )
         outcome = repository.insert_aoi_revision(record)
+    elif args.command == "postgis-load-ssurgo-fixture":
+        repository = PostGISRepository(args.database_url)
+        repository.migrate()
+        batch = parse_ssurgo_fixture(
+            args.fixture,
+            batch_id=args.batch_id,
+            source_snapshot_id=args.source_snapshot_id,
+            source_version_id=args.source_version_id,
+            metadata_path=args.metadata,
+            ingestion_run_id=args.ingestion_run_id,
+            candidate_id=args.candidate_id,
+        )
+        staged = repository.stage_ssurgo_batch(batch)
+        validation = repository.validate_ssurgo_batch(batch.batch_id)
+        if validation["validation_status"] != "validated":
+            outcome = {"staged": staged, "validation": validation, "promotion": None}
+        else:
+            outcome = {
+                "staged": staged,
+                "validation": validation,
+                "promotion": repository.promote_ssurgo_batch(batch.batch_id),
+            }
     else:  # pragma: no cover - argparse prevents this branch
         raise AssertionError(args.command)
     print(json.dumps(outcome, indent=2, sort_keys=True, default=str))

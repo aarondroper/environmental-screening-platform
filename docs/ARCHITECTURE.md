@@ -2,7 +2,7 @@
 
 ## Status and evidence convention
 
-This document separates the intended platform from the verified Milestone 2B local prototype. The implementation currently consists of a Python CLI, file-backed project/AOI/job records, and four narrowly scoped source pathways; it is not the intended hosted application. Statements below are labeled as intended, unresolved, or verified where relevant.
+This document separates the intended platform from the verified Milestone 2B local prototype. The implementation currently consists of a Python CLI, file-backed project/AOI/job records, four narrowly scoped source pathways, and a fixture-only SSURGO PostGIS load; it is not the intended hosted application. Statements below are labeled as intended, unresolved, or verified where relevant.
 
 | Label | Meaning |
 | --- | --- |
@@ -16,7 +16,7 @@ The platform should be a coherent small application whose sophistication comes f
 
 ## Verified current boundary
 
-Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window, 3DEP ImageServer window, SSURGO SDA query, JSON project/AOI/job state, provenance/raw-byte storage, metrics, exports, and an optional PostGIS AOI repository boundary. It stores operational data only under a caller-supplied external data directory. There is no deployed database, API, queue/worker service, frontend, or environmental canonical data promotion. The architecture diagram remains the intended target, not an implementation diagram.
+Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window, 3DEP ImageServer window, SSURGO SDA query and fixture-only PostGIS map-unit/component load, JSON project/AOI/job state, provenance/raw-byte storage, metrics, exports, and an optional PostGIS repository boundary. It stores operational data only under a caller-supplied external data directory. There is no deployed database, API, queue/worker service, frontend, or production/active environmental canonical data promotion. The architecture diagram remains the intended target, not an implementation diagram.
 
 ### Verified local execution boundary (Milestone 2B)
 
@@ -52,8 +52,8 @@ The diagram is an intended boundary model, not a verified deployment diagram.
 | --- | --- | --- |
 | Backend language | Python package and CLI | Implemented prototype; production backend/API not implemented |
 | API | FastAPI with typed schemas and OpenAPI | Strongly preferred; not implemented |
-| Database | PostgreSQL + PostGIS | Local AOI schema boundary implemented; hosted database and environmental source schema not implemented |
-| Migrations | Alembic / SQL migration boundary | First local SQL migration implemented; Alembic history not implemented |
+| Database | PostgreSQL + PostGIS | Local AOI and fixture-only SSURGO schema boundaries implemented; hosted database and active regional environmental schema not implemented |
+| Migrations | Alembic / SQL migration boundary | Two local SQL migrations implemented for AOI and representative SSURGO fixture boundaries; Alembic history not implemented |
 | Geospatial processing | Rasterio, NumPy, Shapely, PyProj, pyshp; SQL/PostGIS later | Initial local dependencies implemented; source-dependent expansion |
 | Frontend | React + TypeScript | Strongly preferred; not implemented |
 | Mapping | MapLibre | Strongly preferred; not implemented |
@@ -146,9 +146,9 @@ external source
 
 Raw source material should retain acquisition time, source identity, original metadata where useful, checksum, and source version/release information when available. Raw data is not expected to be committed to Git.
 
-The local slice implements this as an external filesystem raw store with content-addressed response bytes and append-only acquisition event JSON. Project, AOI, job, result, CSV, and GeoJSON files also live under that external directory. Milestone 2B.2 adds a backend-neutral `SourceRepository` interface with a local SQLite metadata implementation under `catalog/`; SQLite transactions serialize candidate registration and promotion. Milestone 2B.4 adds a separate optional `SpatialRepository` interface with a local PostGIS implementation under `spatial.py`; it stores canonical AOI geometry only and links to SQLite-owned source snapshot/version IDs as text, with no cross-database foreign keys. Raw files have no object-lock or retention guarantee, and the existing JSON project/job store still has no concurrent-worker or multi-record transaction guarantee. PostGIS remains the intended canonical spatial store and hosted repository target.
+The local slice implements this as an external filesystem raw store with content-addressed response bytes and append-only acquisition event JSON. Project, AOI, job, result, CSV, and GeoJSON files also live under that external directory. Milestone 2B.2 adds a backend-neutral `SourceRepository` interface with a local SQLite metadata implementation under `catalog/`; SQLite transactions serialize candidate registration and promotion. Milestone 2B.4 adds a separate optional `SpatialRepository` interface with a local PostGIS implementation under `spatial.py`; it stores canonical AOI geometry and the fixture-only SSURGO map-unit/component records, links to SQLite-owned source snapshot/version IDs as explicit text, and has no cross-database foreign keys. SSURGO staging, validation, and fixture-only promotion are defined in migration `002_ssurgo_mapunits`; the fixture is not an active regional source version. Raw files have no object-lock or retention guarantee, and the existing JSON project/job store still has no concurrent-worker or multi-record transaction guarantee. PostGIS remains the intended canonical spatial store and hosted repository target.
 
-The local PostGIS setup is `postgis/postgis:16-3.4` with a health check and an externally configured bind-mounted data directory. Credentials and the connection URL are environment-provided. Migration `001_aoi_revisions.sql` creates the first schema boundary: canonical AOI revisions, preserved source components, spatial indexes, validity constraints, source/analysis CRS metadata, and provenance. The Census boundary loader transforms preserved EPSG:4269 county geometries to EPSG:4326 canonical geometry and measures area in EPSG:5070; it does not narrow, repair, or silently discard the approved counties. This migration and loader were executed successfully against the pinned container on 2026-09-23, including direct validity, component, CRS, linkage, idempotency, and transaction-rollback checks. This verifies the local repository boundary only, not a deployed database or environmental source loading.
+The local PostGIS setup is `postgis/postgis:16-3.4` with a health check and an externally configured bind-mounted data directory. Credentials and the connection URL are environment-provided. Migration `001_aoi_revisions.sql` creates the AOI boundary: canonical AOI revisions, preserved source components, spatial indexes, validity constraints, source/analysis CRS metadata, and provenance. Migration `002_ssurgo_mapunits.sql` adds SSURGO batch/staging tables and separate fixture-only canonical map-unit/component tables. The Census boundary loader transforms preserved EPSG:4269 county geometries to EPSG:4326 canonical geometry and measures area in EPSG:5070; it does not narrow, repair, or silently discard the approved counties. The SSURGO loader preserves provider `mukey`/`cokey` and hydric fields, validates joins and geometry, records source snapshot/version and optional ingestion/candidate linkage, and promotes only as `fixture_only` for the representative partial response. Both migrations and loaders were executed successfully against the pinned container on 2026-09-23, including direct validity, component, CRS, linkage, idempotency, and transaction-rollback checks. This verifies the local repository boundary and fixture path only, not a deployed database, active regional source version, or environmental source completeness.
 
 ### Conceptual database entities
 
@@ -198,7 +198,7 @@ The pipeline must be retry-safe and idempotent. Failed candidates must not silen
 
 ### Screening pipeline
 
-The current CLI writes a `queued` job and synchronously processes its already-persisted source snapshot. Missing active versions and unavailable artifacts remain source-level outcomes; they are never replaced by live acquisition or a newer candidate. This is not an asynchronous service or queue.
+The current CLI writes a `queued` job and synchronously processes its already-persisted source snapshot. Missing active versions and unavailable artifacts remain source-level outcomes; they are never replaced by live acquisition or a newer candidate. The optional PostGIS SSURGO fixture loader is a separate operator path and does not change screening-job snapshot semantics. This is not an asynchronous service or queue.
 
 ```text
 API accepts project/screening request (intended; not implemented)

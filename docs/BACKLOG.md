@@ -6,7 +6,7 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot; 2B.4 adds an optional local PostGIS AOI repository boundary. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
+Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot; 2B.4 adds an optional local PostGIS AOI repository boundary; 2B.5 adds a fixture-only SSURGO map-unit/component staging and promotion path. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
 
 ## Milestone 1 — Geography and source feasibility
 
@@ -59,7 +59,7 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Verified scope:** Official 2025 Census boundary acquisition/parsing; official 2025 NLCD WCS window; 3DEP ImageServer AOI window; NRCS SDA clipped SSURGO mapunit/component query; immutable project AOI revisions; local job/retry records; external content-addressed raw responses/checksum event records; transparent per-source metrics and states; JSON/CSV/GeoJSON exports; deterministic tests.
 
-**Explicitly not delivered by this first ETL slice:** environmental PostGIS source tables, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval. The local AOI PostGIS schema boundary was added separately in Milestone 2B.4; the local metadata catalog and candidate promotion were added in 2B.2 and immutable job source snapshots in 2B.3.
+**Explicitly not delivered by this first ETL slice:** production environmental PostGIS source tables, true asynchronous queue, full-region/window tiling, source refresh scheduling, PAD-US/FEMA operational adapters, UI/API, deployment, production guarantees, and final Milestone 1 source approval. The local AOI PostGIS schema boundary was added separately in Milestone 2B.4; the local metadata catalog and candidate promotion were added in 2B.2 and immutable job source snapshots in 2B.3. The representative SSURGO PostGIS fixture is tracked separately in Milestone 2B.5.
 
 **Acceptance evidence:** `pytest`, Ruff, mypy and CLI smoke pass; a live 0.00948 km² AOI job produced a completed result with official small-window NLCD/3DEP/SSURGO responses, correct Census union, and explicit PAD-US/FEMA unresolved states. See `PROJECT_STATE.md` and the external data directory; raw data is not committed.
 
@@ -87,9 +87,17 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Runtime evidence:** Docker Desktop WSL integration and the optional psycopg dependency were available on 2026-09-23. The real migration, boundary load, direct PostGIS queries, idempotent reload, failed-transaction rollback, and integration test passed. The database volume and validated Census artifact remain outside Git; this does not establish a deployed database or environmental source-table implementation.
 
-## Next smallest vertical slice — canonical environmental source fixture
+## Milestone 2B.5 — Representative SSURGO spatial fixture
 
-Load one validated normalized environmental source fixture—prefer the SSURGO map-unit/component pathway—into the PostGIS canonical boundary using an existing immutable source snapshot/version. Preserve source attributes and hydric-soil semantics, make the load idempotent and transaction-safe, and keep absent active versions explicit unknown/unavailable. Do not add PAD-US/FEMA operational claims or new analytical metrics.
+**Status:** Implemented and runtime-verified on 2026-09-23. The migration `002_ssurgo_mapunits.sql` adds SSURGO batch, staging, and fixture-only canonical map-unit/component tables without duplicating the SQLite control-plane catalog. The loader parses the existing 1,893-byte official SDA response, retains raw artifacts outside Git, preserves provider attributes and component hydric fields, and records source snapshot/version plus optional ingestion/candidate linkage.
+
+**Verified scope:** A real PostGIS run staged 3 map units and 6 components, validated required identifiers/joins, valid MultiPolygon geometry, EPSG:4326 source/canonical metadata and EPSG:5070 analysis areas, then atomically promoted the candidate as `fixture_only` with `coverage_status=partial` and `observation_status=data_observed`. Repeated loading was idempotent; a separate source version remained separate; failed validation retained the candidate without canonical rows. Live integration tests, full no-database tests, Ruff, mypy, CLI, and diff checks passed.
+
+**Explicit limits:** This is a representative fixture, not full three-county SSURGO coverage, a regional package, an active source version, or production readiness. Hydric fields remain soil information only and are not a wetlands inventory or regulatory determination. No PAD-US/FEMA status changed.
+
+## Next smallest vertical slice — source-version-aware screening consumption
+
+Use an explicitly fixture-only/promoted SSURGO version and AOI revision to read canonical PostGIS map-unit/component data in a bounded screening operation, or first complete the remaining SSURGO regional package/survey-area sizing if that is required by the owner-approved source gate. Preserve fixture-only and partial-coverage states; do not activate the fixture as a regional source or add PAD-US/FEMA claims.
 
 ## Milestone 3 — Repository foundation and local platform
 

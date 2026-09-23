@@ -18,7 +18,10 @@ from pyproj import Transformer
 from shapely.geometry import MultiPolygon, shape
 from shapely.ops import transform, unary_union
 
+from .ssurgo import SsurgoBatchRecord
+
 MIGRATION_ID = "001_aoi_revisions"
+SSURGO_MIGRATION_ID = "002_ssurgo_mapunits"
 DEFAULT_DATABASE_URL_ENV = "ESGP_POSTGIS_URL"
 SOURCE_CRS = "EPSG:4269"
 CANONICAL_CRS = "EPSG:4326"
@@ -106,10 +109,8 @@ class PostGISRepository:
             raise ValueError(
                 f"Set {DEFAULT_DATABASE_URL_ENV} or pass database_url; credentials are not configured in code"
             )
-        self.migration_path = (
-            migration_path
-            or Path(__file__).resolve().parents[2] / "migrations" / "001_aoi_revisions.sql"
-        )
+        self.migration_path = migration_path
+        self.migrations_directory = Path(__file__).resolve().parents[2] / "migrations"
 
     def _connect(self) -> Any:
         try:
@@ -136,9 +137,14 @@ class PostGISRepository:
             connection.close()
 
     def migrate(self) -> None:
-        sql = self.migration_path.read_text(encoding="utf-8")
+        migration_paths = (
+            [self.migration_path]
+            if self.migration_path is not None
+            else sorted(self.migrations_directory.glob("*.sql"))
+        )
         with self._transaction() as connection:
-            connection.execute(sql)
+            for migration_path in migration_paths:
+                connection.execute(migration_path.read_text(encoding="utf-8"))
 
     def insert_aoi_revision(self, record: AoiRevisionRecord) -> dict[str, Any]:
         if not record.components:
@@ -330,6 +336,414 @@ class PostGISRepository:
                 strict=True,
             )
         )
+
+    def stage_ssurgo_batch(self, batch: SsurgoBatchRecord) -> dict[str, Any]:
+        """Insert one SSURGO candidate into staging, preserving it before QA."""
+        if not batch.map_units:
+            raise ValueError("An SSURGO batch requires at least one map unit")
+        if batch.source_crs != "EPSG:4326" or batch.canonical_crs != "EPSG:4326":
+            raise ValueError("This SSURGO slice expects EPSG:4326 source and canonical geometry")
+        if batch.analysis_crs != ANALYSIS_CRS:
+            raise ValueError("This SSURGO slice expects EPSG:5070 analysis geometry")
+        with self._transaction() as connection:
+            existing = connection.execute(
+                """SELECT batch_id,artifact_sha256,artifact_size_bytes
+                   FROM screening.ssurgo_ingestion_batches
+                   WHERE source_snapshot_id=%s AND source_version_id=%s""",
+                (batch.source_snapshot_id, batch.source_version_id),
+            ).fetchone()
+            if existing is not None:
+                if existing[0] != batch.batch_id:
+                    raise ValueError(
+                        "SSURGO source snapshot/version is already staged under another batch"
+                    )
+                if existing[1] != batch.artifact_sha256 or existing[2] != batch.artifact_size_bytes:
+                    raise ValueError(
+                        "SSURGO artifact checksum or size conflicts with the staged source version"
+                    )
+                return self.get_ssurgo_batch(batch.batch_id) or {"batch_id": batch.batch_id}
+            connection.execute(
+                """INSERT INTO screening.ssurgo_ingestion_batches
+                   (batch_id,source_id,source_snapshot_id,source_version_id,ingestion_run_id,
+                    candidate_id,source_url,provider_release,retrieved_at,terms_url,artifact_path,
+                    artifact_sha256,artifact_size_bytes,source_crs,canonical_crs,analysis_crs,
+                    validation_status,coverage_status,observation_status,promotion_status,
+                    validation_json,provenance)
+                   VALUES (%s,'ssurgo',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                           'incomplete',%s,%s,'staged','{}'::jsonb,%s::jsonb)""",
+                (
+                    batch.batch_id,
+                    batch.source_snapshot_id,
+                    batch.source_version_id,
+                    batch.ingestion_run_id,
+                    batch.candidate_id,
+                    batch.source_url,
+                    batch.provider_release,
+                    batch.retrieved_at,
+                    batch.terms_url,
+                    batch.artifact_path,
+                    batch.artifact_sha256,
+                    batch.artifact_size_bytes,
+                    batch.source_crs,
+                    batch.canonical_crs,
+                    batch.analysis_crs,
+                    batch.coverage_status,
+                    batch.observation_status,
+                    _json(batch.provenance),
+                ),
+            )
+            for map_unit in batch.map_units:
+                for component in map_unit.components:
+                    if component.mukey != map_unit.mukey:
+                        raise ValueError("SSURGO component does not join its map unit")
+                connection.execute(
+                    """INSERT INTO screening.ssurgo_map_units_staging
+                       (batch_id,mukey,areasymbol,areaname,musym,muname,source_snapshot_id,
+                        source_version_id,source_crs,canonical_crs,analysis_crs,source_geometry,
+                        geometry,geometry_status,analysis_area_sqm,source_geometry_piece_count,
+                        provenance)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                               ST_GeomFromText(%s,4326),ST_GeomFromText(%s,4326),%s,%s,%s,%s::jsonb)""",
+                    (
+                        batch.batch_id,
+                        map_unit.mukey,
+                        map_unit.areasymbol,
+                        map_unit.areaname,
+                        map_unit.musym,
+                        map_unit.muname,
+                        batch.source_snapshot_id,
+                        batch.source_version_id,
+                        batch.source_crs,
+                        batch.canonical_crs,
+                        batch.analysis_crs,
+                        map_unit.geometry_wkt,
+                        map_unit.geometry_wkt,
+                        map_unit.geometry_status,
+                        map_unit.analysis_area_sqm,
+                        map_unit.source_geometry_piece_count,
+                        _json(map_unit.provenance),
+                    ),
+                )
+                for component in map_unit.components:
+                    connection.execute(
+                        """INSERT INTO screening.ssurgo_components_staging
+                           (batch_id,mukey,cokey,source_snapshot_id,source_version_id,
+                            comppct_r,hydricrating,hydricon,provenance)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)""",
+                        (
+                            batch.batch_id,
+                            component.mukey,
+                            component.cokey,
+                            batch.source_snapshot_id,
+                            batch.source_version_id,
+                            component.comppct_r,
+                            component.hydricrating,
+                            component.hydricon,
+                            _json(component.provenance),
+                        ),
+                    )
+        return self.get_ssurgo_batch(batch.batch_id) or {"batch_id": batch.batch_id}
+
+    def get_ssurgo_batch(self, batch_id: str) -> dict[str, Any] | None:
+        with self._transaction() as connection:
+            row = connection.execute(
+                """SELECT b.batch_id,b.source_id,b.source_snapshot_id,b.source_version_id,
+                          b.ingestion_run_id,b.candidate_id,b.source_url,b.provider_release,
+                          b.retrieved_at::text,b.terms_url,b.artifact_path,b.artifact_sha256,
+                          b.artifact_size_bytes,b.source_crs,b.canonical_crs,b.analysis_crs,
+                          b.validation_status,b.coverage_status,b.observation_status,
+                          b.promotion_status,b.validation_json,b.provenance,b.error_json,
+                          b.created_at::text,b.validated_at::text,b.promoted_at::text,
+                          (SELECT count(*) FROM screening.ssurgo_map_units_staging s
+                           WHERE s.batch_id=b.batch_id) AS staging_map_unit_count,
+                          (SELECT count(*) FROM screening.ssurgo_components_staging s
+                           WHERE s.batch_id=b.batch_id) AS staging_component_count,
+                          (SELECT count(*) FROM screening.ssurgo_map_units c
+                           WHERE c.batch_id=b.batch_id) AS canonical_map_unit_count,
+                          (SELECT count(*) FROM screening.ssurgo_components c
+                           WHERE c.batch_id=b.batch_id) AS canonical_component_count
+                   FROM screening.ssurgo_ingestion_batches b
+                   WHERE b.batch_id=%s""",
+                (batch_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        keys = (
+            "batch_id",
+            "source_id",
+            "source_snapshot_id",
+            "source_version_id",
+            "ingestion_run_id",
+            "candidate_id",
+            "source_url",
+            "provider_release",
+            "retrieved_at",
+            "terms_url",
+            "artifact_path",
+            "artifact_sha256",
+            "artifact_size_bytes",
+            "source_crs",
+            "canonical_crs",
+            "analysis_crs",
+            "validation_status",
+            "coverage_status",
+            "observation_status",
+            "promotion_status",
+            "validation_json",
+            "provenance",
+            "error_json",
+            "created_at",
+            "validated_at",
+            "promoted_at",
+            "staging_map_unit_count",
+            "staging_component_count",
+            "canonical_map_unit_count",
+            "canonical_component_count",
+        )
+        return dict(zip(keys, row, strict=True))
+
+    def validate_ssurgo_batch(self, batch_id: str) -> dict[str, Any]:
+        """Run database-side SSURGO QA and retain either success or failure."""
+        try:
+            with self._transaction() as connection:
+                batch = connection.execute(
+                    """SELECT source_snapshot_id,source_version_id,source_crs,canonical_crs,
+                              analysis_crs,promotion_status
+                       FROM screening.ssurgo_ingestion_batches WHERE batch_id=%s FOR UPDATE""",
+                    (batch_id,),
+                ).fetchone()
+                if batch is None:
+                    raise KeyError(f"Unknown SSURGO batch: {batch_id}")
+                map_stats = connection.execute(
+                    """SELECT count(*)::int,
+                              count(*) FILTER (WHERE geometry_status <> 'valid'
+                                  OR ST_IsEmpty(source_geometry) OR NOT ST_IsValid(source_geometry)
+                                  OR ST_IsEmpty(geometry) OR NOT ST_IsValid(geometry)
+                                  OR ST_GeometryType(source_geometry) <> 'ST_MultiPolygon'
+                                  OR ST_GeometryType(geometry) <> 'ST_MultiPolygon'
+                                  OR analysis_area_sqm IS NULL OR analysis_area_sqm <= 0)::int,
+                              count(*) FILTER (WHERE source_snapshot_id <> %s
+                                  OR source_version_id <> %s OR source_crs <> %s
+                                  OR canonical_crs <> %s OR analysis_crs <> %s)::int,
+                              count(*) FILTER (WHERE mukey = '' OR musym = '' OR muname = '')::int
+                       FROM screening.ssurgo_map_units_staging WHERE batch_id=%s""",
+                    (batch[0], batch[1], batch[2], batch[3], batch[4], batch_id),
+                ).fetchone()
+                component_stats = connection.execute(
+                    """SELECT count(*)::int,
+                              count(*) FILTER (WHERE c.source_snapshot_id <> %s
+                                  OR c.source_version_id <> %s)::int,
+                              count(*) FILTER (WHERE c.mukey = '' OR c.cokey = '')::int,
+                              count(*) FILTER (WHERE c.comppct_r IS NOT NULL
+                                  AND (c.comppct_r < 0 OR c.comppct_r > 100))::int,
+                              count(*) FILTER (WHERE m.mukey IS NULL)::int
+                       FROM screening.ssurgo_components_staging c
+                       LEFT JOIN screening.ssurgo_map_units_staging m
+                         ON m.batch_id=c.batch_id AND m.mukey=c.mukey
+                       WHERE c.batch_id=%s""",
+                    (batch[0], batch[1], batch_id),
+                ).fetchone()
+                checks = {
+                    "map_unit_count": map_stats[0],
+                    "component_count": component_stats[0],
+                    "invalid_map_unit_count": map_stats[1],
+                    "source_linkage_mismatch_count": map_stats[2] + component_stats[1],
+                    "missing_required_field_count": map_stats[3] + component_stats[2],
+                    "invalid_component_percentage_count": component_stats[3],
+                    "orphan_component_count": component_stats[4],
+                    "source_crs": batch[2],
+                    "canonical_crs": batch[3],
+                    "analysis_crs": batch[4],
+                    "hydric_interpretation": "component-level soil information only; not wetlands mapping or a regulatory determination",
+                }
+                failure_keys = {
+                    "invalid_map_unit_count",
+                    "source_linkage_mismatch_count",
+                    "missing_required_field_count",
+                    "invalid_component_percentage_count",
+                    "orphan_component_count",
+                }
+                failures = {
+                    key: checks[key]
+                    for key in failure_keys
+                    if isinstance(checks[key], int) and checks[key] > 0
+                }
+                if checks["map_unit_count"] == 0:
+                    failures["map_unit_count"] = 0
+                if checks["component_count"] == 0:
+                    failures["component_count"] = 0
+                if failures:
+                    connection.execute(
+                        """UPDATE screening.ssurgo_ingestion_batches
+                           SET validation_status='failed',promotion_status='failed',
+                               validation_json=%s::jsonb,error_json=%s::jsonb,
+                               validated_at=now() WHERE batch_id=%s""",
+                        (_json(checks), _json({"qa_failures": failures}), batch_id),
+                    )
+                else:
+                    connection.execute(
+                        """UPDATE screening.ssurgo_ingestion_batches
+                           SET validation_status='validated',promotion_status='validated',
+                               validation_json=%s::jsonb,error_json=NULL,
+                               validated_at=now() WHERE batch_id=%s""",
+                        (_json(checks), batch_id),
+                    )
+        except Exception as exc:
+            if isinstance(exc, KeyError):
+                raise
+            with self._transaction() as connection:
+                connection.execute(
+                    """UPDATE screening.ssurgo_ingestion_batches
+                       SET validation_status='failed',promotion_status='failed',
+                           error_json=%s::jsonb,validated_at=now() WHERE batch_id=%s""",
+                    (_json({"error": str(exc)}), batch_id),
+                )
+            raise
+        return self.get_ssurgo_batch(batch_id) or {"batch_id": batch_id}
+
+    def promote_ssurgo_batch(
+        self, batch_id: str, *, promotion_status: str = "fixture_only"
+    ) -> dict[str, Any]:
+        """Promote a validated batch atomically as a non-active representative fixture."""
+        if promotion_status != "fixture_only":
+            raise ValueError("This representative SSURGO slice only permits fixture_only promotion")
+        with self._transaction() as connection:
+            batch = connection.execute(
+                """SELECT source_snapshot_id,source_version_id,promotion_status,
+                          validation_status FROM screening.ssurgo_ingestion_batches
+                   WHERE batch_id=%s FOR UPDATE""",
+                (batch_id,),
+            ).fetchone()
+            if batch is None:
+                raise KeyError(f"Unknown SSURGO batch: {batch_id}")
+            if batch[2] == "fixture_only":
+                return {
+                    "batch_id": batch_id,
+                    "source_snapshot_id": batch[0],
+                    "source_version_id": batch[1],
+                    "promotion_status": "fixture_only",
+                    "idempotent": True,
+                }
+            if batch[2] != "validated" or batch[3] != "validated":
+                raise ValueError("Only a successfully validated SSURGO batch may be promoted")
+            conflict = connection.execute(
+                """SELECT count(*)::int FROM screening.ssurgo_map_units_staging s
+                   JOIN screening.ssurgo_map_units c
+                     ON c.source_snapshot_id=%s AND c.source_version_id=%s AND c.mukey=s.mukey
+                   WHERE s.batch_id=%s
+                     AND (c.musym IS DISTINCT FROM s.musym
+                          OR c.muname IS DISTINCT FROM s.muname
+                          OR NOT ST_Equals(c.geometry,s.geometry))""",
+                (batch[0], batch[1], batch_id),
+            ).fetchone()[0]
+            if conflict:
+                raise ValueError("Existing SSURGO canonical rows conflict with this source version")
+            connection.execute(
+                """INSERT INTO screening.ssurgo_map_units
+                   (source_snapshot_id,source_version_id,batch_id,mukey,areasymbol,areaname,
+                    musym,muname,source_crs,canonical_crs,analysis_crs,source_geometry,geometry,
+                    geometry_status,analysis_area_sqm,source_geometry_piece_count,promotion_status,
+                    provenance)
+                   SELECT source_snapshot_id,source_version_id,batch_id,mukey,areasymbol,areaname,
+                          musym,muname,source_crs,canonical_crs,analysis_crs,source_geometry,geometry,
+                          geometry_status,analysis_area_sqm,source_geometry_piece_count,
+                          'fixture_only',provenance
+                   FROM screening.ssurgo_map_units_staging WHERE batch_id=%s
+                   ON CONFLICT (source_snapshot_id,source_version_id,mukey) DO NOTHING""",
+                (batch_id,),
+            )
+            connection.execute(
+                """INSERT INTO screening.ssurgo_components
+                   (source_snapshot_id,source_version_id,batch_id,mukey,cokey,comppct_r,
+                    hydricrating,hydricon,promotion_status,provenance)
+                   SELECT source_snapshot_id,source_version_id,batch_id,mukey,cokey,comppct_r,
+                          hydricrating,hydricon,'fixture_only',provenance
+                   FROM screening.ssurgo_components_staging WHERE batch_id=%s
+                   ON CONFLICT (source_snapshot_id,source_version_id,mukey,cokey) DO NOTHING""",
+                (batch_id,),
+            )
+            counts = connection.execute(
+                """SELECT
+                      (SELECT count(*) FROM screening.ssurgo_map_units_staging WHERE batch_id=%s),
+                      (SELECT count(*) FROM screening.ssurgo_components_staging WHERE batch_id=%s),
+                      (SELECT count(*) FROM screening.ssurgo_map_units
+                       WHERE source_snapshot_id=%s AND source_version_id=%s),
+                      (SELECT count(*) FROM screening.ssurgo_components
+                       WHERE source_snapshot_id=%s AND source_version_id=%s)""",
+                (batch_id, batch_id, batch[0], batch[1], batch[0], batch[1]),
+            ).fetchone()
+            if counts[0] != counts[2] or counts[1] != counts[3]:
+                raise RuntimeError("SSURGO promotion count reconciliation failed")
+            connection.execute(
+                """UPDATE screening.ssurgo_ingestion_batches
+                   SET promotion_status='fixture_only',promoted_at=now() WHERE batch_id=%s""",
+                (batch_id,),
+            )
+        return self.get_ssurgo_batch(batch_id) or {"batch_id": batch_id}
+
+    def get_ssurgo_map_units(
+        self, source_snapshot_id: str, source_version_id: str
+    ) -> dict[str, Any]:
+        """Return promoted SSURGO map units with their component joins."""
+        with self._transaction() as connection:
+            map_units = connection.execute(
+                """SELECT mukey,areasymbol,areaname,musym,muname,source_crs,canonical_crs,
+                          analysis_crs,ST_AsText(source_geometry),ST_AsText(geometry),
+                          geometry_status,analysis_area_sqm,source_geometry_piece_count,
+                          promotion_status,provenance
+                   FROM screening.ssurgo_map_units
+                   WHERE source_snapshot_id=%s AND source_version_id=%s ORDER BY mukey""",
+                (source_snapshot_id, source_version_id),
+            ).fetchall()
+            components = connection.execute(
+                """SELECT mukey,cokey,comppct_r,hydricrating,hydricon,promotion_status,provenance
+                   FROM screening.ssurgo_components
+                   WHERE source_snapshot_id=%s AND source_version_id=%s
+                   ORDER BY mukey,cokey""",
+                (source_snapshot_id, source_version_id),
+            ).fetchall()
+        component_keys = (
+            "mukey",
+            "cokey",
+            "comppct_r",
+            "hydricrating",
+            "hydricon",
+            "promotion_status",
+            "provenance",
+        )
+        by_mukey: dict[str, list[dict[str, Any]]] = {}
+        for row in components:
+            item = dict(zip(component_keys, row, strict=True))
+            by_mukey.setdefault(item["mukey"], []).append(item)
+        map_unit_keys = (
+            "mukey",
+            "areasymbol",
+            "areaname",
+            "musym",
+            "muname",
+            "source_crs",
+            "canonical_crs",
+            "analysis_crs",
+            "source_geometry_wkt",
+            "geometry_wkt",
+            "geometry_status",
+            "analysis_area_sqm",
+            "source_geometry_piece_count",
+            "promotion_status",
+            "provenance",
+        )
+        result = []
+        for row in map_units:
+            item = dict(zip(map_unit_keys, row, strict=True))
+            item["components"] = by_mukey.get(item["mukey"], [])
+            result.append(item)
+        return {
+            "source_snapshot_id": source_snapshot_id,
+            "source_version_id": source_version_id,
+            "map_units": result,
+            "map_unit_count": len(result),
+            "component_count": sum(len(item["components"]) for item in result),
+        }
 
 
 def census_boundary_record(

@@ -1,6 +1,6 @@
 # Screening workflow and product contract — Milestone 2A / 2B
 
-**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus the first optional PostGIS AOI schema boundary; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement environmental PostGIS source tables/API/queue/frontend behavior.
+**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus optional PostGIS AOI and representative SSURGO fixture-only schema boundaries; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement active regional environmental PostGIS source tables/API/queue/frontend behavior.
 
 ## 1. Product boundary
 
@@ -122,7 +122,7 @@ Every completed screening result is an immutable snapshot tied to a project, AOI
 
 Missing values are null with a reason and state, never silently coerced to zero. Exact provider acquisition requests and hashes must be sufficient to identify the acquired source snapshot, subject to provider stability and terms. Store pending/effective FEMA product provenance as separate source-version records.
 
-Milestones 2B.2–2B.3 persist a local metadata subset of this lineage in an external-directory SQLite catalog: ingestion runs/retries, acquisition attempts, checksum/release source versions, candidate artifact paths, candidate validation/coverage/error records, promotion decisions, a per-source active-version pointer, and immutable per-job source snapshots. Candidate acquisition is distinct from activation; failed or incomplete candidates remain queryable and cannot promote. Job creation resolves the active pointer for every requested source before processing. Retries reuse those snapshot rows; a new job is required for a fresh source snapshot. This is not canonical PostGIS storage.
+Milestones 2B.2–2B.3 persist a local metadata subset of this lineage in an external-directory SQLite catalog: ingestion runs/retries, acquisition attempts, checksum/release source versions, candidate artifact paths, candidate validation/coverage/error records, promotion decisions, a per-source active-version pointer, and immutable per-job source snapshots. Candidate acquisition is distinct from activation; failed or incomplete candidates remain queryable and cannot promote. Job creation resolves the active pointer for every requested source before processing. Retries reuse those snapshot rows; a new job is required for a fresh source snapshot. Milestone 2B.5 separately stores a representative SSURGO candidate and fixture-only canonical rows in PostGIS using the same explicit snapshot/version identifiers; this is not an active source version or proof of regional coverage.
 
 ## 7. Asynchronous job states and failure semantics
 
@@ -147,7 +147,7 @@ Every result view and export must state in plain language that this is prelimina
 
 ## 10. Source-specific adapter contracts (design only)
 
-All adapters are project-owned code. Initial automated adapters now exist for Census TIGER/Line, Annual NLCD, 3DEP, and SSURGO; they remain a local prototype, not production-ready or regional approval. PAD-US and FEMA have no acquisition adapter in this slice. Acquisition must be automated from official provider services/packages; external artifacts are fixtures only, not a permanent manual-download input path.
+All adapters are project-owned code. Initial automated adapters now exist for Census TIGER/Line, Annual NLCD, 3DEP, and SSURGO; they remain a local prototype, not production-ready or regional approval. The SSURGO PostGIS fixture loader consumes an externally retained validation artifact only for this bounded fixture path; it does not replace the automated SDA acquisition boundary. PAD-US and FEMA have no acquisition adapter in this slice. Acquisition must be automated from official provider services/packages; external artifacts are fixtures only, not a permanent manual-download input path.
 
 ### Common adapter boundary
 
