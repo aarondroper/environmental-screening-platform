@@ -374,7 +374,9 @@ def _update_ssurgo_external_manifest(
         entry = _regional_manifest_entry(spec, item)
         if entry is not None:
             if item["candidate"].get("status") == "failed":
-                entry["validation_status"] = "FAILED: acquisition or archive validation failed; retained inactive candidate."
+                entry["validation_status"] = (
+                    "FAILED: acquisition or archive validation failed; retained inactive candidate."
+                )
             existing = next(
                 (
                     index
@@ -405,9 +407,7 @@ def _update_ssurgo_external_manifest(
                     "sha256": item["candidate"].get("sha256"),
                     "byte_size": item["candidate"].get("byte_size"),
                     "http_status": (attempt.get("details") or {}).get("http_status"),
-                    "response_headers": (attempt.get("details") or {}).get(
-                        "response_headers", {}
-                    ),
+                    "response_headers": (attempt.get("details") or {}).get("response_headers", {}),
                     "result": item["candidate"]["error"],
                     "classification": "Acquisition or archive-validation failure; no package was promoted.",
                 }
@@ -435,6 +435,7 @@ def ingest_ssurgo_regional_packages(
     batch_id = str(uuid4())
     area_results: list[dict[str, Any]] = []
     for spec in specs_tuple:
+
         def acquire(
             _source_id: str,
             root: Path,
@@ -482,9 +483,7 @@ def ingest_ssurgo_regional_packages(
         "production_ready": False,
         "acquired_count": sum(1 for item in area_results if item["candidate"].get("artifact_path")),
         "validated_archive_count": sum(
-            1
-            for item in area_results
-            if item["candidate"].get("validation_status") == "validated"
+            1 for item in area_results if item["candidate"].get("validation_status") == "validated"
         ),
         "failed_count": len(failures),
         "areas": area_results,

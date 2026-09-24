@@ -138,8 +138,7 @@ def test_regional_acquisition_records_all_packages_as_inactive_candidates(tmp_pa
     sizing_path = tmp_path / "sizing.json"
     record = _sizing_record(sizing_path)
     bodies = {
-        row["package_url"]: _package_bytes(row["areasymbol"])
-        for row in record["survey_areas"]
+        row["package_url"]: _package_bytes(row["areasymbol"]) for row in record["survey_areas"]
     }
     repository = SQLiteSourceRepository(tmp_path)
     batch = ingest_ssurgo_regional_packages(
@@ -165,19 +164,25 @@ def test_regional_acquisition_records_all_packages_as_inactive_candidates(tmp_pa
         for candidate in candidates
     )
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
-    package_entries = [entry for entry in manifest["artifacts"] if "survey-area package" in entry["source"]]
+    package_entries = [
+        entry for entry in manifest["artifacts"] if "survey-area package" in entry["source"]
+    ]
     assert len(package_entries) == 19
-    assert all(entry["provider_reported_size_bytes"] == entry["actual_size_bytes"] for entry in package_entries)
+    assert all(
+        entry["provider_reported_size_bytes"] == entry["actual_size_bytes"]
+        for entry in package_entries
+    )
 
 
 def test_regional_acquisition_retains_bad_package_failure_and_other_results(tmp_path: Path) -> None:
     sizing_path = tmp_path / "sizing.json"
     record = _sizing_record(sizing_path)
     bodies = {
-        row["package_url"]: _package_bytes(row["areasymbol"])
-        for row in record["survey_areas"]
+        row["package_url"]: _package_bytes(row["areasymbol"]) for row in record["survey_areas"]
     }
-    bad_url = next(row["package_url"] for row in record["survey_areas"] if row["areasymbol"] == "CO001")
+    bad_url = next(
+        row["package_url"] for row in record["survey_areas"] if row["areasymbol"] == "CO001"
+    )
     bodies[bad_url] = b"not a zip archive"
     repository = SQLiteSourceRepository(tmp_path)
     batch = ingest_ssurgo_regional_packages(
@@ -189,11 +194,24 @@ def test_regional_acquisition_retains_bad_package_failure_and_other_results(tmp_
 
     assert batch["status"] == "failed"
     assert batch["failed_count"] == 1
-    failed = [candidate for candidate in repository.list_candidates("ssurgo") if candidate["status"] == "failed"]
+    failed = [
+        candidate
+        for candidate in repository.list_candidates("ssurgo")
+        if candidate["status"] == "failed"
+    ]
     assert len(failed) == 1
     assert failed[0]["artifact_path"] is not None
     assert Path(failed[0]["artifact_path"]).is_file()
-    assert len([candidate for candidate in repository.list_candidates("ssurgo") if candidate["status"] == "incomplete"]) == 18
+    assert (
+        len(
+            [
+                candidate
+                for candidate in repository.list_candidates("ssurgo")
+                if candidate["status"] == "incomplete"
+            ]
+        )
+        == 18
+    )
     assert repository.get_active("ssurgo") is None
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert any("CO001" in entry["source"] for entry in manifest["failed_attempts"])
@@ -203,8 +221,7 @@ def test_regional_acquisition_rejects_provider_size_mismatch(tmp_path: Path) -> 
     sizing_path = tmp_path / "sizing.json"
     record = _sizing_record(sizing_path, bad_symbol="CO001")
     bodies = {
-        row["package_url"]: _package_bytes(row["areasymbol"])
-        for row in record["survey_areas"]
+        row["package_url"]: _package_bytes(row["areasymbol"]) for row in record["survey_areas"]
     }
     repository = SQLiteSourceRepository(tmp_path)
     batch = ingest_ssurgo_regional_packages(
@@ -214,7 +231,11 @@ def test_regional_acquisition_rejects_provider_size_mismatch(tmp_path: Path) -> 
         session=PackageSession(bodies),
     )
     assert batch["failed_count"] == 1
-    failed = next(candidate for candidate in repository.list_candidates("ssurgo") if candidate["status"] == "failed")
+    failed = next(
+        candidate
+        for candidate in repository.list_candidates("ssurgo")
+        if candidate["status"] == "failed"
+    )
     assert "provider size changed" in failed["error"]["message"]
 
 
@@ -222,8 +243,7 @@ def test_repeated_regional_acquisition_reuses_content_addressed_versions(tmp_pat
     sizing_path = tmp_path / "sizing.json"
     record = _sizing_record(sizing_path)
     bodies = {
-        row["package_url"]: _package_bytes(row["areasymbol"])
-        for row in record["survey_areas"]
+        row["package_url"]: _package_bytes(row["areasymbol"]) for row in record["survey_areas"]
     }
     repository = SQLiteSourceRepository(tmp_path)
     first = ingest_ssurgo_regional_packages(

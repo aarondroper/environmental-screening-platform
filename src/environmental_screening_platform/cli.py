@@ -18,6 +18,7 @@ from .ingestion import (
 )
 from .spatial import PostGISRepository, PostGISUnavailable, census_boundary_record
 from .ssurgo import parse_ssurgo_fixture
+from .ssurgo_regional import validate_ssurgo_regional_packages
 from .workflow import (
     FIXTURE_SCREENING_SOURCES,
     create_job,
@@ -120,6 +121,13 @@ def _parser() -> argparse.ArgumentParser:
         help="Acquire all official regional SSURGO packages as inactive validation candidates",
     )
     regional_ingest.add_argument("--sizing-record", type=Path)
+
+    regional_validate = sub.add_parser(
+        "validate-ssurgo-regional",
+        help="Validate all acquired regional SSURGO packages without promotion",
+    )
+    regional_validate.add_argument("--sizing-record", type=Path)
+    regional_validate.add_argument("--boundary", type=Path)
 
     retry_ingest = sub.add_parser("retry-ingestion", help="Create a linked retry ingestion run")
     retry_ingest.add_argument("--run-id", required=True)
@@ -262,6 +270,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = ingest_ssurgo_regional_packages(
             args.data_dir,
             sizing_record=args.sizing_record,
+        )
+    elif args.command == "validate-ssurgo-regional":
+        outcome = validate_ssurgo_regional_packages(
+            args.data_dir,
+            sizing_record=args.sizing_record,
+            boundary_path=args.boundary,
         )
     elif args.command == "retry-ingestion":
         outcome = retry_ingestion(args.run_id, args.data_dir)

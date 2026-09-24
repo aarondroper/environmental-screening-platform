@@ -50,8 +50,7 @@ class SsurgoPackageSpec:
     @property
     def provider_release(self) -> str:
         return (
-            f"SSURGO {self.areasymbol} saversion {self.saversion} "
-            f"saverest {self.saverest_provider}"
+            f"SSURGO {self.areasymbol} saversion {self.saversion} saverest {self.saverest_provider}"
         )
 
 
