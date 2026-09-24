@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
+from uuid import uuid4
 
 import requests
 from shapely.geometry import shape
@@ -19,7 +22,13 @@ from .adapters import (
 )
 from .catalog import SourceRepository, SQLiteSourceRepository
 from .models import MATURITY, Acquisition
-from .store import read_json
+from .ssurgo_packages import (
+    SSURGO_REGIONAL_SIZING,
+    SsurgoPackageSpec,
+    acquire_ssurgo_package,
+    load_ssurgo_package_specs,
+)
+from .store import read_json, write_json
 
 ADAPTER_VERSION = __version__
 REQUEST_URLS = {
@@ -97,6 +106,8 @@ def ingest_source(
     retry_of: str | None = None,
     repository: SourceRepository | None = None,
     acquirer: Acquirer | None = None,
+    requested_url: str | None = None,
+    allow_missing_aoi: bool = False,
 ) -> dict[str, Any]:
     if source_id not in REQUEST_URLS:
         raise ValueError(f"Unknown selected source: {source_id}")
@@ -105,11 +116,16 @@ def ingest_source(
         repository if repository is not None else SQLiteSourceRepository(data_root),
     )
     aoi, revision = _aoi_context(data_root.resolve(), project_id, aoi_id)
-    if source_id != "census_boundary" and source_id in OPERATIONAL_SOURCES and revision is None:
+    if (
+        source_id != "census_boundary"
+        and source_id in OPERATIONAL_SOURCES
+        and revision is None
+        and not allow_missing_aoi
+    ):
         raise ValueError(f"Source {source_id} requires --project-id and an AOI revision")
     run = repository.begin_run(
         source_id=source_id,
-        requested_url=REQUEST_URLS[source_id],
+        requested_url=requested_url or REQUEST_URLS[source_id],
         project_id=project_id,
         aoi_id=revision["aoi_id"] if revision else None,
         aoi_revision=int(revision["revision"]) if revision else None,
@@ -125,7 +141,7 @@ def ingest_source(
         repository.record_attempt(
             run["run_id"],
             status="acquired",
-            requested_url=REQUEST_URLS[source_id],
+            requested_url=item.requested_url or requested_url or REQUEST_URLS[source_id],
             actual_url=item.source_url,
             retrieved_at=item.acquired_at,
             sha256=item.sha256,
@@ -136,6 +152,9 @@ def ingest_source(
                 "terms_url": item.terms_url,
                 "media_type": item.media_type,
                 "request_parameters": item.request_parameters,
+                "provider_reported_size_bytes": item.provider_reported_size_bytes,
+                "response_headers": item.response_headers,
+                "http_status": item.http_status,
             },
         )
         candidate = repository.record_candidate(
@@ -164,7 +183,7 @@ def ingest_source(
         repository.record_attempt(
             run["run_id"],
             status="blocked",
-            requested_url=REQUEST_URLS[source_id],
+            requested_url=requested_url or REQUEST_URLS[source_id],
             details={"validation_scope": scope},
             error=message,
         )
@@ -201,7 +220,7 @@ def ingest_source(
             repository.record_attempt(
                 run["run_id"],
                 status="failed",
-                requested_url=REQUEST_URLS[source_id],
+                requested_url=requested_url or REQUEST_URLS[source_id],
                 details={},
                 error=f"{type(exc).__name__}: {exc}",
             )
@@ -279,3 +298,204 @@ def retry_ingestion(
         repository=repository,
         acquirer=acquirer,
     )
+
+
+def _regional_manifest_entry(
+    spec: SsurgoPackageSpec, outcome: dict[str, Any]
+) -> dict[str, Any] | None:
+    candidate = outcome.get("candidate") or {}
+    artifact_path = candidate.get("artifact_path")
+    if not artifact_path or not candidate.get("sha256"):
+        return None
+    validation = candidate.get("validation") or {}
+    provenance = validation.get("source_provenance") or {}
+    metrics = validation.get("metrics") or {}
+    attempts = candidate.get("acquisition_attempts") or []
+    attempt = attempts[-1] if attempts else {}
+    attempt_details = attempt.get("details") or {}
+    source_url = candidate.get("source_url") or spec.package_url
+    retrieved_at = (
+        provenance.get("acquired_at")
+        or provenance.get("retrieved_at")
+        or candidate.get("retrieved_at")
+    )
+    response_headers = provenance.get("response_headers") or attempt_details.get(
+        "response_headers", {}
+    )
+    return {
+        "source": f"NRCS SSURGO survey-area package {spec.areasymbol}",
+        "url": spec.package_url,
+        "final_url": provenance.get("source_url", source_url),
+        "release_version": candidate.get("provider_release") or spec.provider_release,
+        "retrieval_date": retrieved_at,
+        "local_path": artifact_path,
+        "file_size_bytes": candidate.get("byte_size"),
+        "sha256": candidate.get("sha256"),
+        "license_terms_url": provenance.get("terms_url") or candidate.get("terms_url"),
+        "validation_status": "PASS: ZIP CRC and spatial/tabular package structure validated; inactive validation-only candidate.",
+        "provider_reported_size_bytes": spec.provider_reported_size_bytes,
+        "actual_size_bytes": candidate.get("byte_size"),
+        "http_status": provenance.get("http_status") or attempt_details.get("http_status"),
+        "http_headers": response_headers,
+        "run_id": candidate.get("run_id"),
+        "candidate_id": candidate.get("candidate_id"),
+        "source_version_id": candidate.get("version_id"),
+        "notes": (
+            f"Provider-reported compressed size {spec.provider_reported_size_bytes} bytes; "
+            f"measured local size {candidate.get('byte_size')} bytes. "
+            f"Archive metrics: {json.dumps(metrics.get('archive_validation', {}), sort_keys=True)}. "
+            "Not promoted; full regional canonical coverage and production readiness are not established."
+        ),
+    }
+
+
+def _update_ssurgo_external_manifest(
+    data_root: Path,
+    *,
+    batch: dict[str, Any],
+    specs: dict[str, SsurgoPackageSpec],
+) -> None:
+    """Append package evidence to the external manifest without touching Git."""
+    manifest_path = data_root / "manifest.json"
+    if manifest_path.exists():
+        manifest = read_json(manifest_path)
+    else:
+        manifest = {
+            "manifest_version": 1,
+            "retrieved_on": datetime.now(UTC).date().isoformat(),
+            "scope": "External source artifacts and validation records",
+            "artifacts": [],
+            "failed_attempts": [],
+        }
+    artifacts = manifest.setdefault("artifacts", [])
+    failures = manifest.setdefault("failed_attempts", [])
+    for item in batch["areas"]:
+        spec = specs[item["areasymbol"]]
+        entry = _regional_manifest_entry(spec, item)
+        if entry is not None:
+            if item["candidate"].get("status") == "failed":
+                entry["validation_status"] = "FAILED: acquisition or archive validation failed; retained inactive candidate."
+            existing = next(
+                (
+                    index
+                    for index, current in enumerate(artifacts)
+                    if current.get("local_path") == entry["local_path"]
+                    or (
+                        current.get("source") == entry["source"]
+                        and current.get("sha256") == entry["sha256"]
+                    )
+                ),
+                None,
+            )
+            if existing is None:
+                artifacts.append(entry)
+            else:
+                artifacts[existing] = entry
+        if item.get("candidate", {}).get("error"):
+            attempts = item["candidate"].get("acquisition_attempts") or []
+            attempt = attempts[-1] if attempts else {}
+            failures.append(
+                {
+                    "source": f"NRCS SSURGO survey-area package {spec.areasymbol}",
+                    "attempt_date": attempt.get("attempted_at"),
+                    "official_url": spec.package_url,
+                    "run_id": item.get("run", {}).get("run_id"),
+                    "candidate_id": item.get("candidate", {}).get("candidate_id"),
+                    "artifact_path": item["candidate"].get("artifact_path"),
+                    "sha256": item["candidate"].get("sha256"),
+                    "byte_size": item["candidate"].get("byte_size"),
+                    "http_status": (attempt.get("details") or {}).get("http_status"),
+                    "response_headers": (attempt.get("details") or {}).get(
+                        "response_headers", {}
+                    ),
+                    "result": item["candidate"]["error"],
+                    "classification": "Acquisition or archive-validation failure; no package was promoted.",
+                }
+            )
+    manifest["retrieved_on"] = datetime.now(UTC).date().isoformat()
+    write_json(manifest_path, manifest)
+
+
+def ingest_ssurgo_regional_packages(
+    data_root: Path,
+    *,
+    sizing_record: Path | None = None,
+    repository: SourceRepository | None = None,
+    session: Any | None = None,
+) -> dict[str, Any]:
+    """Acquire all 19 official SSURGO packages as inactive candidates."""
+    repository = cast(
+        SourceRepository,
+        repository if repository is not None else SQLiteSourceRepository(data_root),
+    )
+    sizing_path = sizing_record or data_root / SSURGO_REGIONAL_SIZING
+    specs_tuple = load_ssurgo_package_specs(sizing_path)
+    specs = {spec.areasymbol: spec for spec in specs_tuple}
+    http_session = session or requests.Session()
+    batch_id = str(uuid4())
+    area_results: list[dict[str, Any]] = []
+    for spec in specs_tuple:
+        def acquire(
+            _source_id: str,
+            root: Path,
+            _aoi: Any,
+            callback: Callable[[Acquisition], None],
+            *,
+            package_spec: SsurgoPackageSpec = spec,
+        ) -> ProviderData:
+            return acquire_ssurgo_package(
+                http_session, root, package_spec, acquisition_callback=callback
+            )
+
+        outcome = ingest_source(
+            "ssurgo",
+            data_root,
+            repository=repository,
+            acquirer=acquire,
+            requested_url=spec.package_url,
+            allow_missing_aoi=True,
+        )
+        area_results.append(
+            {
+                "areasymbol": spec.areasymbol,
+                "areaname": spec.areaname,
+                "provider_package_identifier": spec.provider_package_identifier,
+                "provider_reported_size_bytes": spec.provider_reported_size_bytes,
+                "run": outcome["run"],
+                "candidate": outcome["candidate"],
+            }
+        )
+    failures = [item for item in area_results if item["candidate"]["status"] == "failed"]
+    batch = {
+        "batch_id": batch_id,
+        "source_id": "ssurgo",
+        "sizing_record": str(sizing_path),
+        "approved_boundary": {
+            "geoids": sorted({"08013", "08069", "08123"}),
+            "vintage": 2025,
+            "survey_area_count": len(specs_tuple),
+        },
+        "started_at": area_results[0]["run"]["started_at"] if area_results else None,
+        "completed_at": datetime.now(UTC).isoformat(),
+        "status": "failed" if failures else "completed_validation_only",
+        "promotion_status": "not_promoted",
+        "production_ready": False,
+        "acquired_count": sum(1 for item in area_results if item["candidate"].get("artifact_path")),
+        "validated_archive_count": sum(
+            1
+            for item in area_results
+            if item["candidate"].get("validation_status") == "validated"
+        ),
+        "failed_count": len(failures),
+        "areas": area_results,
+        "limitations": [
+            "This workflow validates ZIP containers and package structure only; it does not parse or promote regional map-unit data.",
+            "Every package candidate remains inactive because survey-area packages do not establish complete AOI coverage.",
+            "Hydric-soil information remains soil information, not a wetlands inventory or regulatory determination.",
+        ],
+    }
+    batch_path = data_root / "ssurgo" / "regional-package-acquisition" / f"{batch_id}.json"
+    write_json(batch_path, batch)
+    batch["batch_record_path"] = str(batch_path)
+    _update_ssurgo_external_manifest(data_root, batch=batch, specs=specs)
+    return batch

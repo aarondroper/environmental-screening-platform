@@ -77,6 +77,10 @@ class Acquisition:
     terms_url: str
     attempts: int = 1
     request_parameters: dict[str, Any] = field(default_factory=dict)
+    requested_url: str | None = None
+    provider_reported_size_bytes: int | None = None
+    response_headers: dict[str, str] = field(default_factory=dict)
+    http_status: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

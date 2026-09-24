@@ -106,7 +106,14 @@ def fetch_raw(
         response.close()
         raise ValueError(f"Provider redirected to an unapproved host or scheme: {response.url}")
     declared = response.headers.get("Content-Length")
-    if declared and int(declared) > max_bytes:
+    reported_size: int | None = None
+    if declared:
+        try:
+            reported_size = int(declared)
+        except ValueError as exc:
+            response.close()
+            raise ValueError("Provider returned a non-numeric Content-Length") from exc
+    if reported_size is not None and reported_size > max_bytes:
         raise ValueError(f"Response exceeds configured {max_bytes}-byte acquisition limit")
     chunks: list[bytes] = []
     size = 0
@@ -138,6 +145,20 @@ def fetch_raw(
     if not raw_path.exists():
         _write_bytes_atomic(raw_path, body)
     actual_url = response.url
+    response_headers = {
+        key: value
+        for key, value in response.headers.items()
+        if key.lower()
+        in {
+            "content-length",
+            "content-type",
+            "content-encoding",
+            "etag",
+            "last-modified",
+            "accept-ranges",
+        }
+    }
+    http_status = response.status_code
     response.close()
     acquisition = Acquisition(
         source_id=source_id,
@@ -152,6 +173,10 @@ def fetch_raw(
         terms_url=terms_url,
         attempts=attempt,
         request_parameters=params or form_body or (json_body or {}),
+        requested_url=url,
+        provider_reported_size_bytes=reported_size,
+        response_headers=response_headers,
+        http_status=http_status,
     )
     event_json = (
         json.dumps(acquisition.to_dict(), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
