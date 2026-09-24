@@ -65,6 +65,15 @@ For the bounded 3DEP elevation path:
 
 This creates a single-source `3dep_fixture_only` job. It reads only the exact snapshotted external DEM, reports footprint coverage, valid/nodata cells, raw elevation statistics, CRS/grid/nodata metadata, and vertical units/datum when declared. It performs no unit/datum conversion or slope calculation. A covered result may include one raster-footprint feature in GeoJSON; pixel geometries are not generated, and full regional coverage is not claimed.
 
+For the bounded multi-source fixture path:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" screen-fixtures \
+  --project-id PROJECT_ID --database-url "$ESGP_POSTGIS_URL"
+```
+
+This creates one `fixtures` job for the validated Census AOI revision. It runs the existing SSURGO, Annual NLCD, and 3DEP fixture processors against their immutable source snapshots, and includes PAD-US (`conditionally_validated`/quarantined) and FEMA (`access_blocked`) in the source-status matrix without processing either source. JSON preserves nested source results; CSV has one row per source plus repeated matrix metadata; GeoJSON contains only the AOI and meaningful SSURGO/3DEP geometries. `job_status=completed` does not mean complete evidence: inspect `overall_status`, `job_outcome`, and each source's coverage/observation state.
+
 The SSURGO command creates a single-source `ssurgo_fixture_only` job. It reports exact snapshot/version provenance, fixture-only status, covered/uncovered AOI area, map-unit/component metrics, and hydric-soil attributes. It never selects latest data or claims regional SSURGO coverage. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. Active regional canonical environmental layers and regional tiling are not implemented.
 
 Source ingestion is separately available as a candidate-first operator workflow. For example:
@@ -85,4 +94,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census AOI and representative fixture-only SSURGO tables; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Live small-AOI source requests and NLCD/3DEP/SSURGO fixture screening are not final source approval, production validation, or regional coverage proof. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census AOI and representative fixture-only SSURGO tables; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Live small-AOI source requests and unified NLCD/3DEP/SSURGO fixture screening are not final source approval, production validation, or regional coverage proof. Regional SSURGO survey-area/package sizing remains a separate validation task. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.

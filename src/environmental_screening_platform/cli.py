@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from .catalog import SQLiteSourceRepository
 from .ingestion import REQUEST_URLS, ingest_source, retry_ingestion
-from .spatial import PostGISRepository, census_boundary_record
+from .spatial import PostGISRepository, PostGISUnavailable, census_boundary_record
 from .ssurgo import parse_ssurgo_fixture
 from .workflow import (
+    FIXTURE_SCREENING_SOURCES,
     create_job,
     create_project,
     export_result,
@@ -80,6 +82,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     dep_submit.add_argument("--project-id", required=True)
     dep_submit.add_argument("--aoi-id")
+
+    fixtures_submit = sub.add_parser(
+        "screen-fixtures",
+        help="Run the bounded multi-source fixture screening workflow",
+    )
+    fixtures_submit.add_argument("--project-id", required=True)
+    fixtures_submit.add_argument("--aoi-id")
+    fixtures_submit.add_argument(
+        "--database-url",
+        help="Optional PostGIS URL for snapshot-pinned SSURGO fixture consumption",
+    )
 
     status = sub.add_parser("job-status", help="Show job lifecycle and source attempts")
     status.add_argument("--job-id", required=True)
@@ -198,6 +211,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             screening_mode="3dep_fixture_only",
         )
         result = run_job(job["job_id"], args.data_dir)
+        outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
+    elif args.command == "screen-fixtures":
+        job = create_job(
+            args.project_id,
+            args.data_dir,
+            args.aoi_id,
+            source_ids=FIXTURE_SCREENING_SOURCES,
+            screening_mode="fixtures",
+        )
+        spatial_repository = None
+        if args.database_url or os.environ.get("ESGP_POSTGIS_URL"):
+            try:
+                spatial_repository = PostGISRepository(args.database_url)
+                spatial_repository.migrate()
+            except PostGISUnavailable:
+                spatial_repository = None
+        result = run_job(
+            job["job_id"],
+            args.data_dir,
+            spatial_repository=spatial_repository,
+        )
         outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
     elif args.command == "job-status":
         outcome = job_status(args.job_id, args.data_dir)

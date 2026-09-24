@@ -32,7 +32,7 @@ from .raster import screen_3dep_raster, screen_nlcd_raster
 from .spatial import PostGISUnavailable, SpatialRepository
 from .store import read_json, write_json
 
-CONTRACT_VERSION = "2B-6"
+CONTRACT_VERSION = "2B-9"
 NOTICE = (
     "Preliminary screening based on named dataset versions and acquisition dates. Data may be incomplete, "
     "generalized, delayed, unavailable, or unsuitable for parcel-scale conclusions. Absence of a mapped "
@@ -45,6 +45,13 @@ SCREENING_SOURCES = (
     "annual_nlcd",
     "3dep",
     "ssurgo",
+    "padus",
+    "fema_nfhl",
+)
+FIXTURE_SCREENING_SOURCES = (
+    "ssurgo",
+    "annual_nlcd",
+    "3dep",
     "padus",
     "fema_nfhl",
 )
@@ -410,6 +417,73 @@ def _result_from_snapshot(
     )
 
 
+def _source_availability_status(source: dict[str, Any]) -> str:
+    """Summarize availability without collapsing maturity or observation state."""
+    snapshot_status = source.get("snapshot_status")
+    if snapshot_status == "blocked":
+        return "blocked"
+    if snapshot_status == "quarantined":
+        return "quarantined"
+    if source.get("coverage_status") == Coverage.UNAVAILABLE.value:
+        return "unavailable"
+    if source.get("observation_status") in {
+        Observation.INCOMPLETE_SOURCE.value,
+        Observation.GEOMETRY_QUARANTINED.value,
+    }:
+        return "incomplete"
+    if source.get("product_status") == "fixture_only":
+        return "fixture_only"
+    return "available"
+
+
+def _source_status_entry(source: dict[str, Any]) -> dict[str, Any]:
+    provenance = source.get("provenance") or {}
+    return {
+        "source_id": source["source_id"],
+        "source_snapshot_id": source.get("source_snapshot_id"),
+        "source_version_id": source.get("source_version_id"),
+        "validation_status": source["validation_status"],
+        "coverage_status": source["coverage_status"],
+        "observation_status": source["observation_status"],
+        "availability_status": _source_availability_status(source),
+        "snapshot_status": source.get("snapshot_status"),
+        "source_status": source.get("source_status"),
+        "product_status": source["product_status"],
+        "attempt_status": source["attempt_status"],
+        "sha256": provenance.get("sha256"),
+        "byte_size": provenance.get("byte_size", provenance.get("size_bytes")),
+        "reason": source.get("snapshot_reason") or source.get("reason"),
+    }
+
+
+def _job_outcome(source_results: list[dict[str, Any]], *, fixture_mode: bool) -> dict[str, Any]:
+    matrix = [_source_status_entry(source) for source in source_results]
+    blocked = [row["source_id"] for row in matrix if row["availability_status"] == "blocked"]
+    quarantined = [
+        row["source_id"] for row in matrix if row["availability_status"] == "quarantined"
+    ]
+    incomplete = [row["source_id"] for row in matrix if row["availability_status"] == "incomplete"]
+    unavailable = [
+        row["source_id"] for row in matrix if row["availability_status"] == "unavailable"
+    ]
+    successful = [
+        row["source_id"]
+        for row in matrix
+        if row["availability_status"] in {"available", "fixture_only"}
+    ]
+    partial = bool(blocked or quarantined or incomplete or unavailable)
+    return {
+        "status": "partial" if partial else "complete",
+        "product_status": "fixture_only" if fixture_mode else "mixed",
+        "availability_status": "partial" if partial else "available",
+        "successful_sources": successful,
+        "blocked_sources": blocked,
+        "quarantined_sources": quarantined,
+        "incomplete_sources": incomplete,
+        "unavailable_sources": unavailable,
+    }
+
+
 def _parse_aoi(path: Path) -> tuple[Any, str]:
     raw = path.read_bytes()
     data = json.loads(raw)
@@ -542,6 +616,10 @@ def create_job(
         raise ValueError("The NLCD fixture-only mode requires source_ids=['annual_nlcd']")
     if screening_mode == "3dep_fixture_only" and selected_sources != ["3dep"]:
         raise ValueError("The 3DEP fixture-only mode requires source_ids=['3dep']")
+    if screening_mode == "fixtures" and selected_sources != list(FIXTURE_SCREENING_SOURCES):
+        raise ValueError(
+            "The unified fixture mode requires the exact SSURGO, NLCD, 3DEP, PAD-US, and FEMA source set"
+        )
     job_id = _id()
     job = {
         "job_id": job_id,
@@ -606,6 +684,12 @@ def run_job(
             raise ValueError("The NLCD fixture-only mode cannot run a multi-source job")
         if effective_screening_mode == "3dep_fixture_only" and job["source_ids"] != ["3dep"]:
             raise ValueError("The 3DEP fixture-only mode cannot run a multi-source job")
+        if effective_screening_mode == "fixtures" and job["source_ids"] != list(
+            FIXTURE_SCREENING_SOURCES
+        ):
+            raise ValueError(
+                "The unified fixture mode requires the exact SSURGO, NLCD, 3DEP, PAD-US, and FEMA source set"
+            )
         project = read_json(paths["projects"] / job["project_id"] / "project.json")
         revision_path = (
             paths["projects"] / job["project_id"] / "aoi-revisions" / f"{job['aoi_id']}.json"
@@ -618,12 +702,29 @@ def run_job(
         aoi_geometry_wkt = shape(revision["geometry"]).wkt
         results = []
         for snapshot in snapshots:
-            source_result = _result_from_snapshot(
-                snapshot,
-                data_root,
-                aoi_geometry_wkt=aoi_geometry_wkt,
-                spatial_repository=spatial_repository,
-            )
+            try:
+                source_result = _result_from_snapshot(
+                    snapshot,
+                    data_root,
+                    aoi_geometry_wkt=aoi_geometry_wkt,
+                    spatial_repository=spatial_repository,
+                )
+            except Exception as exc:
+                source_result = SourceResult(
+                    source_id=snapshot["source_id"],
+                    validation_status=Maturity(snapshot["source_maturity"]),
+                    validation_scope=(
+                        snapshot.get("provenance", {})
+                        .get("validation", {})
+                        .get("validation_scope", "Source-specific screening attempt")
+                    ),
+                    coverage_status=Coverage.UNAVAILABLE,
+                    observation_status=Observation.UNAVAILABLE,
+                    product_status="source_failure",
+                    attempt_status=AttemptStatus.FAILED,
+                    provenance=dict(snapshot["provenance"]),
+                    reason=f"Source screening failed: {type(exc).__name__}: {exc}",
+                )
             serialized = source_result.to_dict()
             effective_snapshot_status = snapshot["snapshot_status"]
             if (
@@ -639,11 +740,8 @@ def run_job(
                     "ingestion_run_id": snapshot["ingestion_run_id"],
                     "snapshot_status": effective_snapshot_status,
                     "snapshot_reason": source_result.reason,
-                    "source_status": (
-                        source_result.metrics.get("source_status") or effective_snapshot_status
-                        if snapshot["source_id"] in {"ssurgo", "annual_nlcd", "3dep"}
-                        else None
-                    ),
+                    "source_status": source_result.metrics.get("source_status")
+                    or effective_snapshot_status,
                 }
             )
             results.append(serialized)
@@ -656,6 +754,10 @@ def run_job(
                 }
             )
         final_status = JobStatus.COMPLETED if results else JobStatus.FAILED
+        outcome = _job_outcome(
+            results,
+            fixture_mode=effective_screening_mode == "fixtures",
+        )
         result = {
             "result_id": _id(),
             "project_id": project["project_id"],
@@ -671,6 +773,11 @@ def run_job(
             "job_attempt": job["attempt"],
             "job_status": final_status.value,
             "screening_mode": effective_screening_mode,
+            "overall_status": outcome["status"],
+            "product_status": outcome["product_status"],
+            "availability_status": outcome["availability_status"],
+            "source_status_matrix": [_source_status_entry(source) for source in results],
+            "job_outcome": outcome,
             "source_snapshot_ids": [snapshot["snapshot_id"] for snapshot in snapshots],
             "source_snapshots": snapshots,
             "sources_without_active_version": [
@@ -745,6 +852,10 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
             fieldnames=[
                 "job_id",
                 "aoi_revision",
+                "job_status",
+                "overall_status",
+                "job_product_status",
+                "job_availability_status",
                 "source_id",
                 "source_snapshot_id",
                 "snapshot_status",
@@ -766,6 +877,7 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                 "reason",
                 "warnings_json",
                 "limitations_notice",
+                "source_status_matrix_json",
             ],
         )
         writer.writeheader()
@@ -774,6 +886,10 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                 {
                     "job_id": result["job_id"],
                     "aoi_revision": result["aoi_revision"],
+                    "job_status": result["job_status"],
+                    "overall_status": result.get("overall_status", result["job_status"]),
+                    "job_product_status": result.get("product_status", ""),
+                    "job_availability_status": result.get("availability_status", ""),
                     "source_id": source["source_id"],
                     "source_snapshot_id": source.get("source_snapshot_id", ""),
                     "snapshot_status": source.get("snapshot_status", ""),
@@ -796,6 +912,9 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                     "reason": source["reason"] or "",
                     "warnings_json": json.dumps(source["warnings"], sort_keys=True),
                     "limitations_notice": result["limitations_notice"],
+                    "source_status_matrix_json": json.dumps(
+                        result.get("source_status_matrix", []), sort_keys=True
+                    ),
                 }
             )
     revision_path = (
@@ -847,8 +966,14 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                 "aoi_id": result["aoi_id"],
                 "aoi_revision": result["aoi_revision"],
                 "job_id": job_id,
+                "job_status": result["job_status"],
+                "overall_status": result.get("overall_status"),
+                "product_status": result.get("product_status"),
+                "availability_status": result.get("availability_status"),
+                "job_outcome": result.get("job_outcome"),
                 "source_snapshot_ids": result["source_snapshot_ids"],
                 "sources_without_active_version": result["sources_without_active_version"],
+                "source_status_matrix": result.get("source_status_matrix", []),
                 "source_states": [
                     {
                         "source_id": source["source_id"],

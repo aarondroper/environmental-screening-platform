@@ -1,6 +1,6 @@
 # Screening workflow and product contract — Milestone 2A / 2B
 
-**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus optional PostGIS AOI, representative SSURGO fixture-only storage, bounded SSURGO fixture consumption, and bounded snapshot-pinned NLCD/3DEP raster consumption; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement active regional environmental PostGIS source tables/API/queue/frontend behavior.
+**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus optional PostGIS AOI, representative SSURGO fixture-only storage, bounded SSURGO fixture consumption, bounded snapshot-pinned NLCD/3DEP raster consumption, and a bounded multi-source fixture orchestration job; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement active regional environmental PostGIS source tables/API/queue/frontend behavior.
 
 ## 1. Product boundary
 
@@ -109,6 +109,12 @@ For the current bounded raster path, the explicit `nlcd_fixture_only` mode consu
 
 For the current bounded 3DEP path, the explicit `3dep_fixture_only` mode consumes only the external DEM named by the immutable job snapshot's exact `source_snapshot_id` and `source_version_id`. `screening_status=observed` means valid elevation cells were summarized; `nodata` preserves nodata-cell counts and any valid-cell metrics; `uncovered` means the DEM footprint does not intersect the AOI. Elevation values are reported in the raster's declared units and datum when present, otherwise those fields remain null with a warning; no conversion, slope, aspect, flood, landslide, or suitability interpretation is added. A single meaningful raster-footprint feature may be exported for a covered result; pixel geometries are never fabricated.
 
+### Bounded unified fixture workflow
+
+The explicit `screen-fixtures` mode loads one validated immutable Census AOI revision and snapshots exactly five environmental source IDs in this order: `ssurgo`, `annual_nlcd`, `3dep`, `padus`, and `fema_nfhl`. It runs only the existing fixture-only SSURGO, NLCD, and 3DEP processors. PAD-US and FEMA are retained as status-only results: PAD-US remains `conditionally_validated` with `snapshot_status=quarantined`, and FEMA remains `access_blocked` with `snapshot_status=blocked`. No candidate or newer source version is substituted.
+
+The lifecycle `job_status` may be `completed` even when individual sources are unavailable, incomplete, quarantined, or blocked; `overall_status` then reports `partial`, `product_status` reports `fixture_only`, and `job_outcome` plus `source_status_matrix` list successful, blocked, quarantined, incomplete, and unavailable sources. This separates execution completion from evidence completeness. A source failure does not erase other source results. The matrix carries each source's snapshot/version IDs, maturity, coverage, observation, availability, product/attempt status, checksum/byte size where available, and reason.
+
 ### NRCS SSURGO
 
 - Report intersecting map-unit identifiers/names and mapped map-unit overlap area; summarize component-level hydric-rating values (`Yes`, `No`, `Unranked/NULL`) with `mukey`, `cokey`, and `comppct_r` lineage.
@@ -145,7 +151,7 @@ The target request path validates input and references, pins AOI/source versions
 
 ## 8. Exports and user presentation
 
-- Minimum exports remain CSV summary and GeoJSON spatial findings. An export carries project/AOI identity, source/version and retrieval dates, metric definitions/units, coverage and observation states, source-specific status, warnings, and preliminary-use limitations. NLCD and 3DEP raster metrics and raster metadata are included in JSON and CSV; 3DEP may include one source-footprint feature, but no pixel geometries are fabricated for GeoJSON.
+- Minimum exports remain CSV summary and GeoJSON spatial findings. An export carries project/AOI identity, source/version and retrieval dates, metric definitions/units, coverage and observation states, source-specific status, warnings, and preliminary-use limitations. NLCD and 3DEP raster metrics and raster metadata are included in JSON and CSV; 3DEP may include one source-footprint feature, but no pixel geometries are fabricated for GeoJSON. The bounded unified fixture export additionally carries the nested per-source result structure and source-status matrix in JSON, repeated matrix metadata in one-row-per-source CSV, and GeoJSON metadata.
 - GeoJSON includes the AOI and only valid source geometries produced by the run. The current slice exports clipped SSURGO map-unit polygons, not component hydric ratings as spatially delineated features. Raster sources are summarized, not emitted as raster files. Quarantined original geometries are not exported as accepted findings. Include a separate QA/quarantine listing or explicit identifiers/reasons when an acquired source result includes per-AOI quarantines; a prior sample quarantine does not imply that the current AOI is affected.
 - Missing/unavailable/pending/incomplete states must remain explicit in CSV and JSON; do not omit a source row or serialize unknown as numeric zero.
 - GeoPackage and PDF remain optional product decisions and are not implemented here. Exports obey source redistribution terms and preserve attribution.
