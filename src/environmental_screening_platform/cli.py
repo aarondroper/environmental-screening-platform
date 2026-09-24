@@ -54,12 +54,25 @@ def _parser() -> argparse.ArgumentParser:
     submit.add_argument(
         "--aoi-id", help="Optional immutable AOI revision ID; defaults to current revision"
     )
+    submit.add_argument(
+        "--database-url",
+        help="Optional PostGIS URL for snapshot-pinned SSURGO fixture consumption",
+    )
+
+    fixture_submit = sub.add_parser(
+        "screen-ssurgo-fixture",
+        help="Run one explicitly fixture-only SSURGO screening job",
+    )
+    fixture_submit.add_argument("--project-id", required=True)
+    fixture_submit.add_argument("--aoi-id")
+    fixture_submit.add_argument("--database-url")
 
     status = sub.add_parser("job-status", help="Show job lifecycle and source attempts")
     status.add_argument("--job-id", required=True)
 
     retry = sub.add_parser("retry", help="Retry a failed job with the same AOI revision")
     retry.add_argument("--job-id", required=True)
+    retry.add_argument("--database-url")
 
     export = sub.add_parser("export", help="Write result JSON, source CSV, and AOI GeoJSON")
     export.add_argument("--job-id", required=True)
@@ -133,12 +146,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = revise_aoi(args.project_id, args.aoi, args.data_dir)
     elif args.command == "screen":
         job = create_job(args.project_id, args.data_dir, args.aoi_id)
-        result = run_job(job["job_id"], args.data_dir)
+        spatial_repository = PostGISRepository(args.database_url) if args.database_url else None
+        result = run_job(job["job_id"], args.data_dir, spatial_repository=spatial_repository)
+        outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
+    elif args.command == "screen-ssurgo-fixture":
+        job = create_job(
+            args.project_id,
+            args.data_dir,
+            args.aoi_id,
+            source_ids=("ssurgo",),
+            screening_mode="ssurgo_fixture_only",
+        )
+        spatial_repository = PostGISRepository(args.database_url)
+        spatial_repository.migrate()
+        result = run_job(
+            job["job_id"],
+            args.data_dir,
+            spatial_repository=spatial_repository,
+        )
         outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
     elif args.command == "job-status":
         outcome = job_status(args.job_id, args.data_dir)
     elif args.command == "retry":
-        outcome = retry_job(args.job_id, args.data_dir)
+        spatial_repository = PostGISRepository(args.database_url) if args.database_url else None
+        outcome = retry_job(args.job_id, args.data_dir, spatial_repository=spatial_repository)
     elif args.command == "export":
         outcome = [str(path) for path in export_result(args.job_id, args.data_dir, args.output_dir)]
     elif args.command == "ingest":

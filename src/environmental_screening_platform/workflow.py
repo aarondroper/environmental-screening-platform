@@ -26,9 +26,10 @@ from .models import (
     SourceResult,
     utc_now,
 )
+from .spatial import PostGISUnavailable, SpatialRepository
 from .store import read_json, write_json
 
-CONTRACT_VERSION = "2A-1"
+CONTRACT_VERSION = "2B-6"
 NOTICE = (
     "Preliminary screening based on named dataset versions and acquisition dates. Data may be incomplete, "
     "generalized, delayed, unavailable, or unsuitable for parcel-scale conclusions. Absence of a mapped "
@@ -113,7 +114,13 @@ def _boundary_geometry(payload: dict[str, Any]) -> Any:
     return unary_union([shape(feature["geometry"]) for feature in payload["features"]])
 
 
-def _result_from_snapshot(snapshot: dict[str, Any], data_root: Path) -> SourceResult:
+def _result_from_snapshot(
+    snapshot: dict[str, Any],
+    data_root: Path,
+    *,
+    aoi_geometry_wkt: str | None = None,
+    spatial_repository: SpatialRepository | None = None,
+) -> SourceResult:
     """Materialize the screening contract's source outcome from one immutable snapshot."""
     source_id = snapshot["source_id"]
     provenance = dict(snapshot["provenance"])
@@ -159,6 +166,75 @@ def _result_from_snapshot(snapshot: dict[str, Any], data_root: Path) -> SourceRe
             )
 
     validation = provenance.get("validation", {})
+    if source_id == "ssurgo" and status == "active":
+        fixture_provenance = dict(provenance)
+        fixture_status = "fixture_only"
+        if spatial_repository is None or aoi_geometry_wkt is None:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative SSURGO fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status=fixture_status,
+                attempt_status=AttemptStatus.FAILED,
+                provenance=fixture_provenance,
+                reason=(
+                    "Fixture-only SSURGO screening requires an explicitly configured PostGIS repository."
+                ),
+            )
+        try:
+            screened = spatial_repository.screen_ssurgo_snapshot(
+                snapshot["snapshot_id"], snapshot["version_id"], aoi_geometry_wkt
+            )
+        except PostGISUnavailable as exc:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative SSURGO fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status=fixture_status,
+                attempt_status=AttemptStatus.FAILED,
+                provenance=fixture_provenance,
+                reason=f"SSURGO PostGIS fixture query is unavailable: {exc}",
+            )
+        fixture_provenance.update(screened.get("provenance", {}))
+        if screened["status"] != "available":
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative SSURGO fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status=fixture_status,
+                attempt_status=AttemptStatus.FAILED,
+                provenance=fixture_provenance,
+                reason=screened["reason"],
+            )
+        return SourceResult(
+            source_id=source_id,
+            validation_status=Maturity(snapshot["source_maturity"]),
+            validation_scope=validation.get(
+                "validation_scope", "Representative SSURGO fixture only."
+            ),
+            coverage_status=Coverage(screened["coverage_status"]),
+            observation_status=Observation(screened["observation_status"]),
+            product_status=fixture_status,
+            attempt_status=AttemptStatus.VALIDATED,
+            metrics=screened["metrics"],
+            provenance=fixture_provenance,
+            warnings=[
+                "SSURGO records are representative fixture-only data; regional coverage is not established."
+            ],
+            features=screened["features"],
+        )
     metrics = validation.get("metrics", {}) if isinstance(validation, dict) else {}
     return SourceResult(
         source_id=source_id,
@@ -291,6 +367,7 @@ def create_job(
     aoi_id: str | None = None,
     *,
     source_ids: Sequence[str] = SCREENING_SOURCES,
+    screening_mode: str = "standard",
 ) -> dict[str, Any]:
     data_root = _ensure_external_data_root(data_root)
     paths = _repository_paths(data_root)
@@ -305,13 +382,17 @@ def create_job(
     revision = read_json(revision_path)
     if revision["project_id"] != project_id:
         raise ValueError("AOI revision belongs to a different project")
+    selected_sources = list(source_ids)
+    if screening_mode == "ssurgo_fixture_only" and selected_sources != ["ssurgo"]:
+        raise ValueError("The SSURGO fixture-only mode requires source_ids=['ssurgo']")
     job_id = _id()
     job = {
         "job_id": job_id,
         "project_id": project_id,
         "aoi_id": selected_aoi,
         "aoi_revision": revision["revision"],
-        "source_ids": list(source_ids),
+        "source_ids": selected_sources,
+        "screening_mode": screening_mode,
         "status": JobStatus.QUEUED.value,
         "attempt": 0,
         "created_at": utc_now(),
@@ -323,11 +404,11 @@ def create_job(
         job_id=job_id,
         aoi_id=selected_aoi,
         aoi_revision=int(revision["revision"]),
-        source_ids=list(source_ids),
+        source_ids=selected_sources,
     )
     snapshot_by_source = {snapshot["source_id"]: snapshot for snapshot in snapshots}
     job["source_snapshot_ids"] = [
-        snapshot_by_source[source_id]["snapshot_id"] for source_id in source_ids
+        snapshot_by_source[source_id]["snapshot_id"] for source_id in selected_sources
     ]
     write_json(paths["jobs"] / job_id / "job.json", job)
     return job
@@ -336,6 +417,9 @@ def create_job(
 def run_job(
     job_id: str,
     data_root: Path,
+    *,
+    spatial_repository: SpatialRepository | None = None,
+    screening_mode: str | None = None,
 ) -> dict[str, Any]:
     data_root = _ensure_external_data_root(data_root)
     paths = _repository_paths(data_root)
@@ -358,6 +442,9 @@ def run_job(
     write_json(job_path, job)
     attempt_diagnostics: list[dict[str, Any]] = []
     try:
+        effective_screening_mode = screening_mode or job.get("screening_mode", "standard")
+        if effective_screening_mode == "ssurgo_fixture_only" and job["source_ids"] != ["ssurgo"]:
+            raise ValueError("The SSURGO fixture-only mode cannot run a multi-source job")
         project = read_json(paths["projects"] / job["project_id"] / "project.json")
         revision_path = (
             paths["projects"] / job["project_id"] / "aoi-revisions" / f"{job['aoi_id']}.json"
@@ -367,9 +454,15 @@ def run_job(
             raise ValueError("Persisted source snapshot does not match the job request")
         by_source = {snapshot["source_id"]: snapshot for snapshot in snapshots}
         snapshots = [by_source[source_id] for source_id in job["source_ids"]]
+        aoi_geometry_wkt = shape(revision["geometry"]).wkt
         results = []
         for snapshot in snapshots:
-            source_result = _result_from_snapshot(snapshot, data_root)
+            source_result = _result_from_snapshot(
+                snapshot,
+                data_root,
+                aoi_geometry_wkt=aoi_geometry_wkt,
+                spatial_repository=spatial_repository,
+            )
             serialized = source_result.to_dict()
             effective_snapshot_status = snapshot["snapshot_status"]
             if (
@@ -385,6 +478,11 @@ def run_job(
                     "ingestion_run_id": snapshot["ingestion_run_id"],
                     "snapshot_status": effective_snapshot_status,
                     "snapshot_reason": source_result.reason,
+                    "source_status": (
+                        source_result.metrics.get("source_status") or effective_snapshot_status
+                        if snapshot["source_id"] == "ssurgo"
+                        else None
+                    ),
                 }
             )
             results.append(serialized)
@@ -411,6 +509,7 @@ def run_job(
             "job_id": job_id,
             "job_attempt": job["attempt"],
             "job_status": final_status.value,
+            "screening_mode": effective_screening_mode,
             "source_snapshot_ids": [snapshot["snapshot_id"] for snapshot in snapshots],
             "source_snapshots": snapshots,
             "sources_without_active_version": [
@@ -447,7 +546,12 @@ def run_job(
         raise
 
 
-def retry_job(job_id: str, data_root: Path) -> dict[str, Any]:
+def retry_job(
+    job_id: str,
+    data_root: Path,
+    *,
+    spatial_repository: SpatialRepository | None = None,
+) -> dict[str, Any]:
     data_root = _ensure_external_data_root(data_root)
     job = read_json(_repository_paths(data_root)["jobs"] / job_id / "job.json")
     if job["status"] != JobStatus.FAILED.value:
@@ -455,7 +559,7 @@ def retry_job(job_id: str, data_root: Path) -> dict[str, Any]:
     job["status"] = transition_job(job["status"], JobStatus.QUEUED.value)
     job["updated_at"] = utc_now()
     write_json(_repository_paths(data_root)["jobs"] / job_id / "job.json", job)
-    return run_job(job_id, data_root)
+    return run_job(job_id, data_root, spatial_repository=spatial_repository)
 
 
 def job_status(job_id: str, data_root: Path) -> dict[str, Any]:
@@ -490,6 +594,7 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                 "attempt_status",
                 "validation_scope",
                 "product_status",
+                "source_status",
                 "source_version_id",
                 "source_url",
                 "acquired_at",
@@ -518,6 +623,7 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                     "attempt_status": source["attempt_status"],
                     "validation_scope": source["validation_scope"],
                     "product_status": source["product_status"],
+                    "source_status": source.get("source_status", ""),
                     "source_version_id": source.get("source_version_id")
                     or (source.get("provenance") or {}).get("version_id", ""),
                     "source_url": (source.get("provenance") or {}).get("source_url", ""),
@@ -565,6 +671,7 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                         "coverage_status": source["coverage_status"],
                         "observation_status": source["observation_status"],
                         "snapshot_status": source.get("snapshot_status"),
+                        "source_status": source.get("source_status"),
                         "job_id": job_id,
                     },
                 }
@@ -590,6 +697,7 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                         "coverage_status": source["coverage_status"],
                         "observation_status": source["observation_status"],
                         "snapshot_status": source.get("snapshot_status"),
+                        "source_status": source.get("source_status"),
                         "reason": source.get("snapshot_reason") or source.get("reason"),
                     }
                     for source in result["source_results"]

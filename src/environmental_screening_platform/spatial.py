@@ -73,6 +73,10 @@ class SpatialRepository(Protocol):
         self, source_snapshot_id: str, source_version_id: str | None = None
     ) -> dict[str, Any] | None: ...
 
+    def screen_ssurgo_snapshot(
+        self, source_snapshot_id: str, source_version_id: str, aoi_geometry_wkt: str
+    ) -> dict[str, Any]: ...
+
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
@@ -743,6 +747,220 @@ class PostGISRepository:
             "map_units": result,
             "map_unit_count": len(result),
             "component_count": sum(len(item["components"]) for item in result),
+        }
+
+    def screen_ssurgo_snapshot(
+        self, source_snapshot_id: str, source_version_id: str, aoi_geometry_wkt: str
+    ) -> dict[str, Any]:
+        """Screen only the explicitly fixture-only SSURGO version in a job snapshot.
+
+        The source pair is part of every predicate. This method deliberately has no
+        latest-version or active-pointer behavior and cannot consume a non-fixture
+        canonical row in this representative slice.
+        """
+        with self._transaction() as connection:
+            batch = connection.execute(
+                """SELECT b.batch_id,b.validation_status,b.coverage_status,b.observation_status,
+                          b.promotion_status,b.source_url,b.provider_release,b.retrieved_at::text,
+                          b.terms_url,b.artifact_path,b.artifact_sha256,b.artifact_size_bytes,
+                          b.source_crs,b.canonical_crs,b.analysis_crs,
+                          (SELECT count(*) FROM screening.ssurgo_map_units m
+                           WHERE m.source_snapshot_id=b.source_snapshot_id
+                             AND m.source_version_id=b.source_version_id) AS canonical_count
+                   FROM screening.ssurgo_ingestion_batches b
+                   WHERE b.source_snapshot_id=%s AND b.source_version_id=%s""",
+                (source_snapshot_id, source_version_id),
+            ).fetchone()
+            provenance = {
+                "source_snapshot_id": source_snapshot_id,
+                "source_version_id": source_version_id,
+            }
+            if batch is None:
+                return {
+                    "status": "unavailable",
+                    "reason": "No SSURGO canonical fixture batch matches the immutable source snapshot.",
+                    "provenance": provenance,
+                }
+            provenance.update(
+                {
+                    "batch_id": batch[0],
+                    "source_url": batch[5],
+                    "provider_release": batch[6],
+                    "retrieved_at": batch[7],
+                    "terms_url": batch[8],
+                    "artifact_path": batch[9],
+                    "sha256": batch[10],
+                    "size_bytes": batch[11],
+                    "source_crs": batch[12],
+                    "canonical_crs": batch[13],
+                    "analysis_crs": batch[14],
+                    "validation_status": batch[1],
+                    "coverage_status": batch[2],
+                    "observation_status": batch[3],
+                    "promotion_status": batch[4],
+                }
+            )
+            if batch[4] != "fixture_only" or batch[15] == 0:
+                return {
+                    "status": "unavailable",
+                    "reason": (
+                        "The exact SSURGO source pair has no promoted fixture-only canonical records."
+                    ),
+                    "provenance": provenance,
+                }
+
+            aoi = connection.execute(
+                """SELECT ST_IsEmpty(g),ST_IsValid(g),ST_GeometryType(g),ST_SRID(g),
+                          ST_Area(ST_Transform(g,5070))
+                   FROM (SELECT ST_SetSRID(ST_GeomFromText(%s),4326) AS g) aoi""",
+                (aoi_geometry_wkt,),
+            ).fetchone()
+            if aoi[0] or not aoi[1] or aoi[2] not in {"ST_Polygon", "ST_MultiPolygon"}:
+                raise ValueError(
+                    "SSURGO screening AOI must be a valid WGS84 Polygon or MultiPolygon"
+                )
+
+            coverage = connection.execute(
+                """WITH aoi AS (
+                         SELECT ST_SetSRID(ST_GeomFromText(%s),4326) AS geometry
+                       ), selected AS (
+                         SELECT ST_Intersection(m.geometry,aoi.geometry) AS geometry
+                         FROM screening.ssurgo_map_units m CROSS JOIN aoi
+                         WHERE m.source_snapshot_id=%s AND m.source_version_id=%s
+                           AND m.promotion_status='fixture_only'
+                           AND ST_Intersects(m.geometry,aoi.geometry)
+                       )
+                       SELECT ST_Area(ST_Transform(aoi.geometry,5070)),
+                              COALESCE((SELECT ST_Area(ST_Transform(
+                                  ST_UnaryUnion(ST_Collect(geometry)),5070)) FROM selected),0)
+                       FROM aoi""",
+                (aoi_geometry_wkt, source_snapshot_id, source_version_id),
+            ).fetchone()
+            rows = connection.execute(
+                """WITH aoi AS (
+                         SELECT ST_SetSRID(ST_GeomFromText(%s),4326) AS geometry
+                       ), selected AS (
+                         SELECT m.mukey,m.areasymbol,m.areaname,m.musym,m.muname,
+                                m.source_geometry_piece_count,
+                                ST_Intersection(m.geometry,aoi.geometry) AS clipped
+                         FROM screening.ssurgo_map_units m CROSS JOIN aoi
+                         WHERE m.source_snapshot_id=%s AND m.source_version_id=%s
+                           AND m.promotion_status='fixture_only'
+                           AND ST_Intersects(m.geometry,aoi.geometry)
+                       )
+                       SELECT s.mukey,s.areasymbol,s.areaname,s.musym,s.muname,
+                              s.source_geometry_piece_count,ST_AsGeoJSON(s.clipped),
+                              count(c.cokey)::int,
+                              COALESCE(jsonb_agg(jsonb_build_object(
+                                  'mukey',c.mukey,'cokey',c.cokey,
+                                  'comppct_r',c.comppct_r,
+                                  'hydricrating',c.hydricrating,'hydricon',c.hydricon
+                              ) ORDER BY c.cokey) FILTER (WHERE c.cokey IS NOT NULL),
+                              '[]'::jsonb)
+                       FROM selected s
+                       LEFT JOIN screening.ssurgo_components c
+                         ON c.source_snapshot_id=%s AND c.source_version_id=%s
+                        AND c.mukey=s.mukey AND c.promotion_status='fixture_only'
+                       GROUP BY s.mukey,s.areasymbol,s.areaname,s.musym,s.muname,
+                                s.source_geometry_piece_count,s.clipped
+                       ORDER BY s.mukey""",
+                (
+                    aoi_geometry_wkt,
+                    source_snapshot_id,
+                    source_version_id,
+                    source_snapshot_id,
+                    source_version_id,
+                ),
+            ).fetchall()
+
+        aoi_area_sqm = float(coverage[0])
+        covered_area_sqm = float(coverage[1])
+        covered_percentage = covered_area_sqm / aoi_area_sqm * 100 if aoi_area_sqm else 0.0
+        features: list[dict[str, Any]] = []
+        component_records: list[dict[str, Any]] = []
+        hydric_indicator_records: list[dict[str, Any]] = []
+        mapunit_count = 0
+        for row in rows:
+            component_values = row[8]
+            if isinstance(component_values, str):
+                component_values = json.loads(component_values)
+            component_values = list(component_values or [])
+            component_records.extend(component_values)
+            hydric_values = [
+                component
+                for component in component_values
+                if component.get("hydricrating") is not None
+                or component.get("hydricon") is not None
+            ]
+            hydric_indicator_records.extend(hydric_values)
+            positive_count = sum(
+                1
+                for component in component_values
+                if str(component.get("hydricrating") or "").strip().lower() == "yes"
+            )
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": json.loads(row[6]),
+                    "properties": {
+                        "mukey": row[0],
+                        "areasymbol": row[1],
+                        "areaname": row[2],
+                        "musym": row[3],
+                        "muname": row[4],
+                        "source_geometry_piece_count": row[5],
+                        "component_record_count": row[7],
+                        "hydric_indicator_record_count": len(hydric_values),
+                        "hydric_positive_record_count": positive_count,
+                        "source_snapshot_id": source_snapshot_id,
+                        "source_version_id": source_version_id,
+                        "source_status": "fixture_only",
+                        "hydric_interpretation": (
+                            "Hydric-soil information; not a wetlands inventory or regulatory determination."
+                        ),
+                    },
+                }
+            )
+            mapunit_count += 1
+
+        if not rows:
+            screening_status = "uncovered"
+            observation_status = "not_covered"
+        elif hydric_indicator_records:
+            screening_status = "observed"
+            observation_status = "data_observed"
+        else:
+            screening_status = "no_indicator_observed"
+            observation_status = "data_observed"
+        coverage_status = "complete" if covered_percentage >= 99.999999 else "partial"
+        return {
+            "status": "available",
+            "screening_status": screening_status,
+            "coverage_status": coverage_status,
+            "observation_status": observation_status,
+            "provenance": provenance,
+            "features": features,
+            "metrics": {
+                "source_status": "fixture_only",
+                "screening_status": screening_status,
+                "aoi_area_sqm": round(aoi_area_sqm, 3),
+                "covered_aoi_area_sqm": round(covered_area_sqm, 3),
+                "uncovered_aoi_area_sqm": round(max(aoi_area_sqm - covered_area_sqm, 0.0), 3),
+                "covered_aoi_percentage": round(covered_percentage, 6),
+                "intersecting_mapunit_count": mapunit_count,
+                "component_record_count": len(component_records),
+                "component_records": component_records,
+                "hydric_indicator_record_count": len(hydric_indicator_records),
+                "hydric_indicator_records": hydric_indicator_records,
+                "hydric_positive_record_count": sum(
+                    1
+                    for component in hydric_indicator_records
+                    if str(component.get("hydricrating") or "").strip().lower() == "yes"
+                ),
+                "hydric_interpretation": (
+                    "Hydric-soil information; not a wetlands inventory or regulatory determination."
+                ),
+            },
         }
 
 

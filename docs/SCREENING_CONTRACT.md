@@ -1,6 +1,6 @@
 # Screening workflow and product contract — Milestone 2A / 2B
 
-**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus optional PostGIS AOI and representative SSURGO fixture-only schema boundaries; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement active regional environmental PostGIS source tables/API/queue/frontend behavior.
+**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus optional PostGIS AOI, representative SSURGO fixture-only storage, and bounded fixture consumption; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement active regional environmental PostGIS source tables/API/queue/frontend behavior.
 
 ## 1. Product boundary
 
@@ -110,12 +110,16 @@ Metrics below are the intended transparent MVP measures. The final values are co
 - If an area-weighted component-share summary is used, label it explicitly as a generalized map-unit/component estimate; component shares are not spatially delineated within each map unit. Do not label the estimate “wetland area” or use it to assert wetland presence/absence.
 - Preserve survey-area symbols, release/revision metadata, map-unit/component joins, scale limitations, and unknown/unranked values. Hydric-soil indicators are soil information only, not a wetland inventory or regulatory wetland determination.
 
+For the current bounded PostGIS path, `source_status=fixture_only` is mandatory. `screening_status=observed` means source hydric attributes are present in intersecting component records; `no_indicator_observed` means the fixture covers the queried area but no qualifying hydric attribute is present; `uncovered` means no promoted fixture geometry intersects the AOI. These statuses describe the fixture query only and never imply wetlands presence or absence.
+
 ## 6. Result and provenance structure
 
 Every completed screening result is an immutable snapshot tied to a project, AOI revision, job, and pinned source set. At minimum, result metadata contains:
 
 - result ID, project ID, AOI ID/revision, input geometry hash, submission/completion timestamps, calculation-contract version, and overall job outcome;
+- screening mode when applicable, including the explicit `ssurgo_fixture_only` mode;
 - source-level state: source ID, `validation_status`, validation scope, `coverage_status`, observation state, temporal/product status, metrics, warnings, and reasons for missing/partial metrics;
+- source-specific status where applicable, including `source_status=fixture_only`, plus the exact source snapshot and source-version identifiers;
 - source-version lineage: provider and dataset name, release/product year, source item/layer/feature IDs, source URL and actual acquisition URL/request parameters, retrieval time, publisher/effective/revision time when supplied, format, source CRS/grid/datum, terms/attribution URL, and source-declared completeness;
 - raw snapshot/object key (outside the analytical result if stored separately), byte size, checksum, parser/adapter version, staging transform/repair operation, validation report/checks, input/output feature counts, accepted/quarantined counts, and canonical version ID when promotion has occurred;
 - metric definition, value, units, numerator, denominator, covered/unknown area or cell count, method/version, and rounding/display precision.
@@ -136,7 +140,7 @@ The target request path validates input and references, pins AOI/source versions
 
 ## 8. Exports and user presentation
 
-- Minimum exports remain CSV summary and GeoJSON spatial findings. An export carries project/AOI identity, source/version and retrieval dates, metric definitions/units, coverage and observation states, warnings, and preliminary-use limitations.
+- Minimum exports remain CSV summary and GeoJSON spatial findings. An export carries project/AOI identity, source/version and retrieval dates, metric definitions/units, coverage and observation states, source-specific status, warnings, and preliminary-use limitations.
 - GeoJSON includes the AOI and only valid source geometries produced by the run. The current slice exports clipped SSURGO map-unit polygons, not component hydric ratings as spatially delineated features. Raster sources are summarized, not emitted as raster files. Quarantined original geometries are not exported as accepted findings. Include a separate QA/quarantine listing or explicit identifiers/reasons when an acquired source result includes per-AOI quarantines; a prior sample quarantine does not imply that the current AOI is affected.
 - Missing/unavailable/pending/incomplete states must remain explicit in CSV and JSON; do not omit a source row or serialize unknown as numeric zero.
 - GeoPackage and PDF remain optional product decisions and are not implemented here. Exports obey source redistribution terms and preserve attribution.

@@ -6,7 +6,7 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot; 2B.4 adds an optional local PostGIS AOI repository boundary; 2B.5 adds a fixture-only SSURGO map-unit/component staging and promotion path. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
+Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot; 2B.4 adds an optional local PostGIS AOI repository boundary; 2B.5 adds a fixture-only SSURGO map-unit/component staging and promotion path; 2B.6 consumes only the matching fixture-only SSURGO rows in a bounded screening job. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
 
 ## Milestone 1 — Geography and source feasibility
 
@@ -36,7 +36,7 @@ Current status: Northern Colorado and the five-source MVP direction are owner-se
 
 **Objective:** Define the analyst workflow, result structure, source-specific metrics, and preliminary-screening limitations.
 
-**Status:** Milestone 2A contract definition and the first controlled Milestone 2B ETL slice are complete. Final Milestone 1 source approval remains open for complete regional PAD-US coverage/repair statistics and FEMA technical access/effective-pending validation. The implementation is local and incomplete; it does not enable production/region-wide conclusions.
+**Status:** Milestone 2A contract definition and controlled Milestones 2B.1–2B.6 local slices are complete. Final Milestone 1 source approval remains open for complete regional PAD-US coverage/repair statistics and FEMA technical access/effective-pending validation. The implementation is local and incomplete; it does not enable production/region-wide conclusions.
 
 **Major deliverables:**
 
@@ -95,9 +95,17 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Explicit limits:** This is a representative fixture, not full three-county SSURGO coverage, a regional package, an active source version, or production readiness. Hydric fields remain soil information only and are not a wetlands inventory or regulatory determination. No PAD-US/FEMA status changed.
 
-## Next smallest vertical slice — source-version-aware screening consumption
+## Milestone 2B.6 — Fixture-only SSURGO screening consumption
 
-Use an explicitly fixture-only/promoted SSURGO version and AOI revision to read canonical PostGIS map-unit/component data in a bounded screening operation, or first complete the remaining SSURGO regional package/survey-area sizing if that is required by the owner-approved source gate. Preserve fixture-only and partial-coverage states; do not activate the fixture as a regional source or add PAD-US/FEMA claims.
+**Status:** Implemented and runtime-verified on 2026-09-24. Screening dispatch accepts an optional PostGIS repository and resolves the immutable SQLite SSURGO job snapshot before querying only the exact `source_snapshot_id`/`source_version_id` pair. The query intersects canonical fixture geometries with the immutable job AOI, joins map units to components, calculates covered/uncovered area, map-unit/component counts, and hydric attribute records, and emits `source_status=fixture_only` plus explicit `observed`, `no_indicator_observed`, or `uncovered` states.
+
+**Verified scope:** The explicit `screen-ssurgo-fixture` command creates a single-source `ssurgo_fixture_only` job. Live tests verified covered and uncovered AOIs, missing snapshots, source-version isolation after a newer promotion, component joins, hydric-soil labeling, and JSON/CSV/GeoJSON provenance. PAD-US and FEMA remain unchanged.
+
+**Explicit limits:** The path consumes only fixture-only canonical rows and does not establish regional SSURGO coverage, production readiness, or an active regional source. Hydric-soil information is not a wetlands inventory or regulatory determination. No composite score or regulatory conclusion is produced.
+
+## Next smallest vertical slice — next approved canonical screening pathway
+
+Extend snapshot-pinned screening to another approved canonical source pathway only after its canonical spatial contract is implemented, or complete regional SSURGO survey-area/package sizing if that remains the owner-approved source gate. Preserve the SQLite/PostGIS boundary, fixture maturity states, and explicit unknown/unavailable behavior; do not consume PAD-US or FEMA operationally.
 
 ## Milestone 3 — Repository foundation and local platform
 

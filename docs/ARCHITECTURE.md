@@ -2,7 +2,7 @@
 
 ## Status and evidence convention
 
-This document separates the intended platform from the verified Milestone 2B local prototype. The implementation currently consists of a Python CLI, file-backed project/AOI/job records, four narrowly scoped source pathways, and a fixture-only SSURGO PostGIS load; it is not the intended hosted application. Statements below are labeled as intended, unresolved, or verified where relevant.
+This document separates the intended platform from the verified Milestone 2B local prototype. The implementation currently consists of a Python CLI, file-backed project/AOI/job records, four narrowly scoped source pathways, a fixture-only SSURGO PostGIS load, and bounded fixture-only SSURGO screening consumption; it is not the intended hosted application. Statements below are labeled as intended, unresolved, or verified where relevant.
 
 | Label | Meaning |
 | --- | --- |
@@ -16,16 +16,18 @@ The platform should be a coherent small application whose sophistication comes f
 
 ## Verified current boundary
 
-Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window, 3DEP ImageServer window, SSURGO SDA query and fixture-only PostGIS map-unit/component load, JSON project/AOI/job state, provenance/raw-byte storage, metrics, exports, and an optional PostGIS repository boundary. It stores operational data only under a caller-supplied external data directory. There is no deployed database, API, queue/worker service, frontend, or production/active environmental canonical data promotion. The architecture diagram remains the intended target, not an implementation diagram.
+Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window, 3DEP ImageServer window, SSURGO SDA query, fixture-only PostGIS map-unit/component load, snapshot-pinned fixture-only SSURGO screening query, JSON project/AOI/job state, provenance/raw-byte storage, metrics, exports, and an optional PostGIS repository boundary. It stores operational data only under a caller-supplied external data directory. There is no deployed database, API, queue/worker service, frontend, or production/active regional environmental canonical data promotion. The architecture diagram remains the intended target, not an implementation diagram.
 
 ### Verified local execution boundary (Milestone 2B)
 
 - `screening project-create` obtains/caches the exact 2025 Census county boundary as needed, validates a WGS84 Polygon/MultiPolygon AOI against the full union, and records immutable project/AOI-revision JSON outside Git.
 - `screening screen` persists a job, runs the local worker synchronously, and records `queued → processing → completed/failed`; independent source failures remain source-level outcomes. Failed jobs may be retried against the same immutable AOI; completed results are immutable.
+- `screening screen-ssurgo-fixture` creates a single-source job in explicit `ssurgo_fixture_only` mode, resolves the immutable SQLite SSURGO snapshot, and queries only the matching PostGIS snapshot/version pair. It never selects latest data or a regional source version. `screening screen --database-url ...` can use the same bounded SSURGO path when the requested job contains an eligible snapshot.
 - Raw provider responses are content-addressed by SHA-256 and stored outside the repository. Each acquisition event records actual response URL/media type, exact request parameters, retrieval time, size, checksum, release label, and terms URL. HTTPS and same-host redirects are required; response size and request dimensions are bounded.
 - Source adapters are project-owned. Current successful small-AOI pathways are TIGER/Line 2025, Annual NLCD 2025 WCS, USGS 3DEP ImageServer, and NRCS SDA SSURGO. Successful live smoke requests are evidence only for those small windows and do not expand the source validation scopes recorded in the contract.
 - PAD-US and FEMA are emitted as explicit not-acquired outcomes: PAD-US remains conditionally validated with regional coverage unknown and the prior sample quarantine counts shown; FEMA remains access-blocked with no effective/pending data. No fallback source is used.
 - Results are JSON; CSV carries one row per source including state/provenance/metrics; GeoJSON carries the AOI plus valid SSURGO clipped map-unit features. Raster products are summarized rather than exported as raster layers. GeoJSON does not imply that a missing source has no findings.
+- SSURGO fixture results carry `source_status=fixture_only`, `screening_status` (`observed`, `no_indicator_observed`, or `uncovered`), source snapshot/version provenance, covered and uncovered AOI areas, map-unit/component counts, and the explicit hydric-soil limitation label. Component attributes are not spatially delineated within map units.
 - This is job-oriented, not genuinely asynchronous: the CLI command itself waits while the local worker runs. AOIs exceeding configured NLCD/3DEP request cell limits currently produce explicit source failure/unknown outcomes; multi-window tiling is future work.
 
 ## Intended system shape
@@ -108,7 +110,7 @@ Source-specific adapters should encapsulate acquisition and parsing differences 
 - source-specific schema and spatial validation;
 - reproducible staging into canonical structures.
 
-The product contract and common/source-specific adapter boundaries are defined in `docs/SCREENING_CONTRACT.md`. A first local subset is implemented; it does not yet implement canonical promotion, source catalog/version transactions, or adapters for PAD-US/FEMA. FEMA access and complete regional PAD-US package access still block final source approval.
+The product contract and common/source-specific adapter boundaries are defined in `docs/SCREENING_CONTRACT.md`. A first local subset is implemented, including a fixture-only SSURGO canonical query; it does not implement production/regional canonical promotion, source catalog/version transactions in PostGIS, or adapters for PAD-US/FEMA. FEMA access and complete regional PAD-US package access still block final source approval.
 
 #### Source acquisition and implementation status
 
@@ -122,7 +124,7 @@ The product-facing maturity vocabulary (`validated`, `conditionally_validated`, 
 
 ### Screening engine
 
-The screening engine should evaluate each project AOI independently against each active source version. It should prefer direct, interpretable physical metrics over a composite environmental score. Likely operations include intersection, area and percentage calculations, line length, proximity, and raster statistics where a raster source is selected.
+The screening engine should evaluate each project AOI independently against each active source version. The verified SSURGO fixture path evaluates only the exact snapshot/version captured by the job and uses direct intersection, area, percentage, map-unit, and component metrics. It should prefer direct, interpretable physical metrics over a composite environmental score. Likely operations include intersection, area and percentage calculations, line length, proximity, and raster statistics where a raster source is selected.
 
 The owner-selected working geography is the validated three-county union (Boulder, Larimer, Weld; approximately 7,391 sq mi), including all three disconnected union components. The local prototype validates AOI containment and uses bounded raster windows; it does not yet tile larger AOIs. SSURGO output retains map-unit/component context and explicitly says that hydric ratings are soil information, not wetlands mapping or evidence of jurisdictional-wetland presence/absence. FEMA's effective/pending path is not implemented; the result remains blocked/unavailable, and the target contract requires unmapped/unavailable areas to stay unknown. Other full source metrics remain intended or partially implemented per `SCREENING_CONTRACT.md`.
 
@@ -192,13 +194,13 @@ scheduled check
   -> expose status and logs
 ```
 
-The `screening ingest` CLI runs an explicit source acquisition as an inactive candidate. Inspection commands list ingestion runs, source versions, candidates by source/status, acquisition attempts/validation from candidate detail, and the active version; `retry-ingestion` creates a new linked run instead of erasing the failed attempt. `promote-candidate` is a separate owner/operator action. Screening job creation now snapshots the active pointer for every requested source, including explicit PAD-US quarantine and FEMA access-blocked states; execution and retry use those exact rows. This local workflow does not yet perform source scheduling, provider change detection, canonical PostGIS loading, or asynchronous queue execution.
+The `screening ingest` CLI runs an explicit source acquisition as an inactive candidate. Inspection commands list ingestion runs, source versions, candidates by source/status, acquisition attempts/validation from candidate detail, and the active version; `retry-ingestion` creates a new linked run instead of erasing the failed attempt. `promote-candidate` is a separate owner/operator action. Screening job creation now snapshots the active pointer for every requested source, including explicit PAD-US quarantine and FEMA access-blocked states; execution and retry use those exact rows. The bounded SSURGO fixture mode consumes only matching fixture-only PostGIS rows; it does not provide general canonical loading, source scheduling, provider change detection, or asynchronous queue execution.
 
 The pipeline must be retry-safe and idempotent. Failed candidates must not silently replace an active version.
 
 ### Screening pipeline
 
-The current CLI writes a `queued` job and synchronously processes its already-persisted source snapshot. Missing active versions and unavailable artifacts remain source-level outcomes; they are never replaced by live acquisition or a newer candidate. The optional PostGIS SSURGO fixture loader is a separate operator path and does not change screening-job snapshot semantics. This is not an asynchronous service or queue.
+The current CLI writes a `queued` job and synchronously processes its already-persisted source snapshot. Missing active versions and unavailable artifacts remain source-level outcomes; they are never replaced by live acquisition or a newer candidate. The explicit SSURGO fixture mode queries the AOI against only the snapshot-pinned fixture rows and preserves uncovered/unknown/unavailable distinctions. This is not an asynchronous service or queue.
 
 ```text
 API accepts project/screening request (intended; not implemented)

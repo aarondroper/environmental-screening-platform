@@ -40,7 +40,14 @@ DATA_DIR=/home/aarondroper/projects/environmental-screening-platform-data/local-
 
 AOI input is GeoJSON WGS84 longitude/latitude with one valid Polygon or MultiPolygon fully inside the approved Boulder/Larimer/Weld 2025 county union. AOI changes create new immutable revisions. The first project creation automatically retrieves the official 2025 TIGER/Line national county ZIP if the external boundary cache is absent, then retains only the three approved counties in the runtime boundary. The official archive is about 84 MB; no other national environmental products are downloaded.
 
-The `screen` command creates a new source snapshot for the requested AOI and currently executes the local worker synchronously. The worker processes only the exact active versions captured at job creation; it does not acquire a newer candidate during execution. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. The optional PostGIS boundary now includes a fixture-only SSURGO map-unit/component load; active regional canonical environmental layers and regional tiling are not implemented.
+The `screen` command creates a new source snapshot for the requested AOI and currently executes the local worker synchronously. The worker processes only the exact active versions captured at job creation; it does not acquire a newer candidate during execution. When passed `--database-url`, it can consume matching fixture-only SSURGO PostGIS records. The explicitly bounded command below is preferred for that path:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" screen-ssurgo-fixture \
+  --project-id PROJECT_ID --database-url "$ESGP_POSTGIS_URL"
+```
+
+This command creates a single-source `ssurgo_fixture_only` job. It reports exact snapshot/version provenance, fixture-only status, covered/uncovered AOI area, map-unit/component metrics, and hydric-soil attributes. It never selects latest data or claims regional SSURGO coverage. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. Active regional canonical environmental layers and regional tiling are not implemented.
 
 Source ingestion is separately available as a candidate-first operator workflow. For example:
 
@@ -60,4 +67,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census AOI and representative fixture-only SSURGO tables; Docker/psycopg availability is environment-dependent. Live small-AOI source requests and the SSURGO fixture load are not final source approval, production validation, or regional coverage proof. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census AOI, representative fixture-only SSURGO tables, and bounded fixture-only screening consumption; Docker/psycopg availability is environment-dependent. Live small-AOI source requests and SSURGO fixture screening are not final source approval, production validation, or regional coverage proof. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
