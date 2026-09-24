@@ -22,6 +22,7 @@ from .ssurgo_regional import (
     audit_ssurgo_regional_discrepancies,
     validate_ssurgo_regional_packages,
 )
+from .ssurgo_regional_candidate import materialize_staged_ssurgo_candidate
 from .ssurgo_regional_staging import stage_ssurgo_regional_packages
 from .workflow import (
     FIXTURE_SCREENING_SOURCES,
@@ -148,6 +149,12 @@ def _parser() -> argparse.ArgumentParser:
     regional_stage.add_argument("--sizing-record", type=Path)
     regional_stage.add_argument("--boundary", type=Path)
     regional_stage.add_argument("--database-url")
+
+    regional_candidate = sub.add_parser(
+        "materialize-ssurgo-regional-candidate",
+        help="Record the existing regional SSURGO staging result as an inactive candidate",
+    )
+    regional_candidate.add_argument("--staging-report", type=Path)
 
     retry_ingest = sub.add_parser("retry-ingestion", help="Create a linked retry ingestion run")
     retry_ingest.add_argument("--run-id", required=True)
@@ -310,6 +317,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             database_url=args.database_url,
             sizing_record=args.sizing_record,
             boundary_path=args.boundary,
+        )
+    elif args.command == "materialize-ssurgo-regional-candidate":
+        outcome = materialize_staged_ssurgo_candidate(
+            args.data_dir,
+            staging_report=args.staging_report,
         )
     elif args.command == "retry-ingestion":
         outcome = retry_ingestion(args.run_id, args.data_dir)

@@ -60,6 +60,14 @@ The live staging run loaded **19 packages, 123,196 `soilmu_a` features, 1,878 ma
 
 This is derived staging evidence, not regional canonical promotion or final source approval. The staged geometry is not exposed as a production screening source, and hydric attributes remain soil information—not a wetlands inventory or regulatory determination.
 
+### SSURGO regional staged candidate — inactive catalog materialization
+
+On 2026-09-24, the completed staging aggregate was independently re-read and checksum-verified before catalog materialization. The external manifest and candidate record identify staging run `615f66d0-0b3a-4356-a53a-0ac346b385ee`, aggregate SHA-256 `94791a8c4cb5a7cc718a8ac7e9869ab9a8aaf35072156859f91de1c3e801c7f3`, synthetic source snapshot `ssurgo-regional-staging:615f66d0-0b3a-4356-a53a-0ac346b385ee`, candidate `9d77a86a-bdc7-4684-b977-1081f8ed484c`, and derived source version `ssurgo:e6e101e90c00745d452482c2e9a4bbedab2a46813d830141e76852ead9b5f3bf`.
+
+The candidate links all 19 package candidates and ingestion runs, all 19 raw package checksums, the 19 package reports, the staging aggregate, the discrepancy-repair audit, and the regional package-QA aggregate. Its recorded validation is **19/19 acquired and structurally valid packages; 123,196 `soilmu_a` features; 1,878 map units; 7,404 components; 10 audited repairs accepted; 0 quarantined; valid derived geometry/CRS checks; 0 orphan component joins; and documented harmless WY621/WY721 naming variations**. This records the already validated staging result; it does not reclassify the package-level content QA or claim gap-free clipped coverage.
+
+The candidate is deliberately `status=incomplete`, `validation_status=conditionally_validated`, `coverage_status=partial`, `observation_status=incomplete_source`, and `promotion_status=not_promoted`. The active SSURGO pointer remains absent. Repeating materialization returned the same candidate/version/run and created no duplicate version. The candidate artifact is a derived JSON report; raw ZIPs and staged geometries remain outside Git and unchanged. Full regional coverage validation and any active-version promotion require separate authorization and must not alter the fixture-only screening path.
+
 ### PAD-US audited staging repair — policy approved; sample partially accepted
 
 The owner approved deterministic repair only in a derived staging artifact. Raw sample bytes and source features remain unchanged. Invalid geometries were processed with Shapely 2.1.2 / GEOS 3.13.1 `make_valid`; area comparisons use NAD83 / Conus Albers equal-area (EPSG:5070). Source properties were compared value-for-value and are identical in derived accepted/quarantine features. No feature was silently dropped: all five raw OBJECTIDs occur exactly once across those outputs and in the QA report. Valid source geometries were retained without repair.
