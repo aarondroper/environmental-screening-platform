@@ -75,6 +75,15 @@ class SourceRepository(Protocol):
         error: str | None = None,
     ) -> dict[str, Any]: ...
 
+    def record_coverage_validation(
+        self,
+        candidate_id: str,
+        *,
+        coverage_status: str,
+        observation_status: str,
+        validation: dict[str, Any],
+    ) -> dict[str, Any]: ...
+
     def finish_run(self, run_id: str, status: str, error: str | None = None) -> None: ...
 
     def get_run(self, run_id: str) -> dict[str, Any] | None: ...
@@ -540,6 +549,77 @@ class SQLiteSourceRepository:
                 ),
             )
             self._finish_run_in_transaction(db, candidate["run_id"], stored_status, error)
+        return self.get_candidate(candidate_id) or {}
+
+    def record_coverage_validation(
+        self,
+        candidate_id: str,
+        *,
+        coverage_status: str,
+        observation_status: str,
+        validation: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append a coverage QA result without changing candidate activation state."""
+        with self._transaction() as db:
+            row = db.execute(
+                """SELECT c.*,r.status AS run_status
+                   FROM candidates c JOIN ingestion_runs r USING(run_id)
+                   WHERE c.candidate_id=?""",
+                (candidate_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown candidate: {candidate_id}")
+            if row["source_id"] != "ssurgo":
+                raise ValueError("Regional coverage validation is only defined for SSURGO")
+            if row["promotion_status"] != "not_promoted":
+                raise ValueError("Coverage validation cannot modify a promoted candidate")
+            if row["status"] not in {"incomplete", "conditionally_validated"}:
+                raise ValueError("Coverage validation requires an inactive incomplete candidate")
+            existing = json.loads(row["validation_json"])
+            existing_coverage = existing.get("regional_coverage_validation")
+            if existing_coverage is not None:
+                prior_checksum = existing_coverage.get("aggregate_report_sha256")
+                next_checksum = validation.get("aggregate_report_sha256")
+                if prior_checksum != next_checksum:
+                    same_report = existing_coverage.get("analysis_version") == validation.get(
+                        "analysis_version"
+                    ) and existing_coverage.get("aggregate_report") == validation.get(
+                        "aggregate_report"
+                    )
+                    if not same_report:
+                        raise ValueError(
+                            "Candidate already has a different regional coverage validation"
+                        )
+                    merged = dict(existing)
+                    merged["regional_coverage_validation"] = validation
+                    db.execute(
+                        """UPDATE candidates
+                           SET coverage_status=?,observation_status=?,validation_json=?,validated_at=?
+                           WHERE candidate_id=?""",
+                        (
+                            coverage_status,
+                            observation_status,
+                            _json(merged),
+                            utc_now(),
+                            candidate_id,
+                        ),
+                    )
+                    return self._candidate(candidate_id, db) or {}
+                return self._candidate(candidate_id, db) or {}
+            merged = dict(existing)
+            merged["regional_coverage_validation"] = validation
+            db.execute(
+                """UPDATE candidates
+                   SET coverage_status=?,observation_status=?,validation_json=?,validated_at=?
+                   WHERE candidate_id=?""",
+                (
+                    coverage_status,
+                    observation_status,
+                    _json(merged),
+                    utc_now(),
+                    candidate_id,
+                ),
+            )
         return self.get_candidate(candidate_id) or {}
 
     @staticmethod

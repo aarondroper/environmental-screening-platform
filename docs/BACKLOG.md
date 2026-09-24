@@ -153,6 +153,16 @@ The read-only parsing/QA, discrepancy-audit, owner-approved derived staging, and
 
 **Safety state:** The candidate is `incomplete`, `conditionally_validated`, `partial`, and `not_promoted`; no active SSURGO pointer was created or updated. Repeat materialization is idempotent and aggregate checksum changes fail before a new candidate is created. This does not establish complete regional coverage, production readiness, or permission to consume the staged dataset in screening.
 
+## Milestone 2B.12 — Regional SSURGO coverage and seam analysis
+
+**Status:** Implemented and runtime-verified on 2026-09-24. The read-only `analyze-ssurgo-regional-coverage` path measured the exact three-county AOI against all 19 existing staging batches, wrote checksummed aggregate/per-package/gap/overlap/seam reports outside Git, and persisted the result against inactive candidate `9d77a86a-bdc7-4684-b977-1081f8ed484c`.
+
+**Result:** Coverage is 99.9999955989% by EPSG:5070 area at report precision, with 842.5 m² uncovered, 43 diagnostic gap components, 9 cross-package overlap pairs totaling 160.7 m² pairwise overlap, and all 19 survey areas contributing. Thirteen gap components are AOI-boundary-adjacent within 1 m; 30 small interior residuals remain unknown and require no silent filling or interpretation. Outside-AOI feature area is reported separately from AOI coverage.
+
+**Safety state:** The candidate remains `incomplete` / `conditionally_validated` / `partial` / `incomplete_source` / `not_promoted`; no active source version was created, and staged/raw data were unchanged. Final regional source approval and any canonical promotion remain separate owner-authorized work.
+
+**Next frontier:** Review the measured coverage evidence and decide whether the residual gaps/overlaps are acceptable for a later canonical promotion design; do not consume this inactive candidate in the fixture-only screening path without a separate decision.
+
 ## Milestone 3 — Repository foundation and local platform
 
 **Priority:** P0

@@ -68,6 +68,24 @@ The candidate links all 19 package candidates and ingestion runs, all 19 raw pac
 
 The candidate is deliberately `status=incomplete`, `validation_status=conditionally_validated`, `coverage_status=partial`, `observation_status=incomplete_source`, and `promotion_status=not_promoted`. The active SSURGO pointer remains absent. Repeating materialization returned the same candidate/version/run and created no duplicate version. The candidate artifact is a derived JSON report; raw ZIPs and staged geometries remain outside Git and unchanged. Full regional coverage validation and any active-version promotion require separate authorization and must not alter the fixture-only screening path.
 
+### SSURGO regional coverage and seam analysis — measured, inactive candidate
+
+On 2026-09-24, the existing 19-package staging batches for candidate `9d77a86a-bdc7-4684-b977-1081f8ed484c` were analyzed in a read-only PostGIS transaction against the exact AOI revision `northern-colorado-front-range/1`. No raw package or staging row was modified, and no analytical intersection or union was persisted as source data. All measurements use EPSG:5070.
+
+| Measure | Result | Interpretation |
+| --- | ---: | --- |
+| AOI area | 19,143,135,654.5 m² | Exact approved three-county union |
+| Unioned staged coverage in AOI | 19,143,134,812.0 m² | 99.9999955989% of AOI |
+| Uncovered residual | 842.5 m² | 0.0000044011%; remains unknown, not absence |
+| Gap components | 43 | 13 are within 1 m of the AOI boundary; 30 are small interior residuals requiring no silent interpretation |
+| Cross-package overlap pairs | 9 | Pairwise overlap area sum 160.7 m²; overlaps were retained as diagnostics |
+| Within-package overlap residual | 0.0 m² at report precision | Numerical/sliver-scale diagnostic; no records were deduplicated |
+| Outside-AOI feature area | 45,518,459,870.3 m² | Sum of source feature area outside the AOI; this is package extent, not an AOI gap |
+
+All 19 survey areas contributed intersecting records. Per-package reports retain area symbol/name, intersecting and total feature counts, coverage area and contribution, outside-AOI area, source snapshot/version, candidate, ingestion-run, source CRS, and analysis CRS. The diagnostic GeoJSON separates gap and overlap geometries; `seam-diagnostics.geojson` combines them for inspection. The small interior residuals are reported as unknown coverage, not filled or classified as hazard-free. They may include source-edge/seam or geometric precision effects; this analysis does not claim a causal attribution. The nonzero uncovered result keeps the inactive candidate `coverage_status=partial` and `observation_status=incomplete_source`.
+
+Aggregate, per-package, gap, overlap, and seam reports are outside Git under `/home/aarondroper/projects/environmental-screening-platform-data/ssurgo/regional-coverage/9d77a86a-bdc7-4684-b977-1081f8ed484c/`; their paths, sizes, and SHA-256 checksums are recorded in the external `manifest.json`. Repeating the analysis is read-only and deterministic at the report-contract level. This is coverage evidence for the inactive staged candidate, not final source approval, active promotion, or permission to treat missing soil coverage as absence of a constraint.
+
 ### PAD-US audited staging repair — policy approved; sample partially accepted
 
 The owner approved deterministic repair only in a derived staging artifact. Raw sample bytes and source features remain unchanged. Invalid geometries were processed with Shapely 2.1.2 / GEOS 3.13.1 `make_valid`; area comparisons use NAD83 / Conus Albers equal-area (EPSG:5070). Source properties were compared value-for-value and are identical in derived accepted/quarantine features. No feature was silently dropped: all five raw OBJECTIDs occur exactly once across those outputs and in the QA report. Valid source geometries were retained without repair.

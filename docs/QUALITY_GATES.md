@@ -23,6 +23,8 @@ The local PostGIS boundary is optional. When Docker Desktop, an external `ESGP_P
 
 The inactive regional SSURGO candidate gate is separate from PostGIS promotion. Run `.venv/bin/screening --data-dir "$DATA_DIR" materialize-ssurgo-regional-candidate` only after the external staging aggregate, package reports, raw checksums, package candidates/runs, repair audit, and package QA have been verified. Confirm the resulting candidate is `incomplete`/`conditionally_validated`/`partial`/`not_promoted`, rerun the command to verify idempotence, and query `active-version --source ssurgo` to confirm the active pointer was not created or changed. This gate does not establish full regional coverage or production readiness.
 
+For the inactive regional candidate, run `.venv/bin/screening --data-dir "$DATA_DIR" analyze-ssurgo-regional-coverage --candidate-id CANDIDATE_ID --database-url "$ESGP_POSTGIS_URL"` only against the existing staging batches. Confirm the command uses a read-only PostGIS transaction, writes aggregate/per-package/diagnostic reports outside Git, records report checksums in the external manifest and candidate validation, and leaves staging rows, raw packages, and the active-version pointer unchanged. Review AOI coverage, uncovered residuals, package overlaps, outside-AOI area, and gap classifications; never treat uncovered soil area as absence of a constraint.
+
 Keep inventorying tracked/visible files, inspecting `git status`, checking documentation links/paths, and distinguishing unavailable checks from passing checks as those systems are added. Do not invent commands for tools that are not configured.
 
 ## Evidence and scope gate

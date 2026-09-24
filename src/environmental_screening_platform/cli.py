@@ -23,6 +23,7 @@ from .ssurgo_regional import (
     validate_ssurgo_regional_packages,
 )
 from .ssurgo_regional_candidate import materialize_staged_ssurgo_candidate
+from .ssurgo_regional_coverage import analyze_ssurgo_regional_coverage
 from .ssurgo_regional_staging import stage_ssurgo_regional_packages
 from .workflow import (
     FIXTURE_SCREENING_SOURCES,
@@ -155,6 +156,13 @@ def _parser() -> argparse.ArgumentParser:
         help="Record the existing regional SSURGO staging result as an inactive candidate",
     )
     regional_candidate.add_argument("--staging-report", type=Path)
+
+    regional_coverage = sub.add_parser(
+        "analyze-ssurgo-regional-coverage",
+        help="Analyze existing staged SSURGO coverage without modifying PostGIS data",
+    )
+    regional_coverage.add_argument("--candidate-id", required=True)
+    regional_coverage.add_argument("--database-url")
 
     retry_ingest = sub.add_parser("retry-ingestion", help="Create a linked retry ingestion run")
     retry_ingest.add_argument("--run-id", required=True)
@@ -322,6 +330,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = materialize_staged_ssurgo_candidate(
             args.data_dir,
             staging_report=args.staging_report,
+        )
+    elif args.command == "analyze-ssurgo-regional-coverage":
+        outcome = analyze_ssurgo_regional_coverage(
+            args.data_dir,
+            candidate_id=args.candidate_id,
+            database_url=args.database_url,
         )
     elif args.command == "retry-ingestion":
         outcome = retry_ingestion(args.run_id, args.data_dir)

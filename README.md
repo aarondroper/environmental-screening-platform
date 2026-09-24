@@ -123,6 +123,16 @@ The completed staging result can be recorded as one inactive catalog candidate w
 
 This creates one checksum-protected derived source version and ingestion run linked to all 19 package candidates, raw checksums, the synthetic regional snapshot, staging batch, repair audit, and QA reports. It remains `incomplete` / `conditionally_validated` with `partial` coverage and `not_promoted` status. Repeating the command returns the same candidate/version; it never advances the SSURGO active pointer. Complete regional coverage and production readiness remain unverified.
 
+The inactive staged candidate can be measured without changing raw or staged data:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" analyze-ssurgo-regional-coverage \
+  --candidate-id 9d77a86a-bdc7-4684-b977-1081f8ed484c \
+  --database-url "$ESGP_POSTGIS_URL"
+```
+
+This read-only analysis records EPSG:5070 AOI/coverage, uncovered residuals, outside-AOI source area, per-survey-area contribution, package overlaps, and gap/seam diagnostic GeoJSON under the external data directory and links the aggregate checksum to the inactive candidate. It does not clip, dissolve, repair, deduplicate, promote, or consume the staged data for screening. Nonzero uncovered area remains unknown, not absence of a constraint; inspect the external report and manifest before any separate promotion decision.
+
 The exports are a JSON source/result record, CSV with one row per source and provenance/state, and GeoJSON with the AOI plus valid SSURGO map-unit polygons produced by that run. NLCD is summarized in JSON/CSV and does not create pixel geometries; 3DEP may add one meaningful raster-footprint feature. Hydric ratings remain component-level soil data, not a wetlands inventory or regulatory wetland determination. The result is preliminary; missing or incomplete data are not treated as no constraint, and no composite score is calculated.
 
 ## Current limits

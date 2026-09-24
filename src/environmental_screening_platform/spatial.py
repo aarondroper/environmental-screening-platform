@@ -84,6 +84,10 @@ class SpatialRepository(Protocol):
         self, package: RegionalPackageStagingRecord
     ) -> dict[str, Any]: ...
 
+    def analyze_ssurgo_regional_coverage(
+        self, batch_ids: list[str], aoi_id: str, aoi_revision: int
+    ) -> dict[str, Any]: ...
+
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
@@ -1003,6 +1007,143 @@ class PostGISRepository:
             "map_unit_count": len(result),
             "component_count": sum(len(item["components"]) for item in result),
         }
+
+    def analyze_ssurgo_regional_coverage(
+        self, batch_ids: list[str], aoi_id: str, aoi_revision: int
+    ) -> dict[str, Any]:
+        """Analyze existing regional staging rows in a read-only transaction."""
+        if not batch_ids or len(batch_ids) != len(set(batch_ids)):
+            raise ValueError("Coverage analysis requires a unique nonempty batch list")
+        query = """
+            WITH aoi AS MATERIALIZED (
+                SELECT geometry AS geom,
+                       ST_Area(ST_Transform(geometry, 5070)) AS area_sqm,
+                       ST_AsGeoJSON(geometry, 9, 0)::jsonb AS geojson
+                FROM screening.aoi_revisions
+                WHERE aoi_id=%s AND aoi_revision=%s
+            ), selected AS MATERIALIZED (
+                SELECT f.batch_id,b.package_areasymbol,b.package_name,
+                       b.source_snapshot_id,
+                       b.source_version_id,b.candidate_id,b.ingestion_run_id,
+                       b.source_crs,b.analysis_crs,f.stable_feature_id,
+                       f.derived_geometry AS geom,
+                       ST_Area(ST_Transform(f.derived_geometry,5070)) AS feature_area_sqm
+                FROM screening.ssurgo_regional_features_staging f
+                JOIN screening.ssurgo_regional_staging_batches b USING (batch_id)
+                WHERE f.batch_id = ANY(%s)
+            ), clipped AS MATERIALIZED (
+                SELECT s.*,
+                       ST_Intersection(s.geom,a.geom) AS clipped,
+                       ST_Area(ST_Transform(ST_Intersection(s.geom,a.geom),5070))
+                           AS clipped_area_sqm
+                FROM selected s CROSS JOIN aoi a
+                WHERE ST_Intersects(s.geom,a.geom)
+            ), package_union AS MATERIALIZED (
+                SELECT batch_id,package_areasymbol,package_name,source_snapshot_id,
+                       source_version_id,candidate_id,ingestion_run_id,
+                       source_crs,analysis_crs,
+                       ST_UnaryUnion(ST_Collect(clipped)) AS geom,
+                       count(*)::int AS intersecting_feature_count,
+                       sum(clipped_area_sqm) AS sum_feature_intersection_area_sqm
+                FROM clipped
+                GROUP BY batch_id,package_areasymbol,package_name,source_snapshot_id,
+                         source_version_id,candidate_id,ingestion_run_id,
+                         source_crs,analysis_crs
+            ), package_stats AS MATERIALIZED (
+                SELECT p.*,
+                       ST_Area(ST_Transform(p.geom,5070)) AS coverage_area_sqm,
+                       t.feature_count,
+                       t.feature_area_sqm,
+                       t.feature_area_sqm - p.sum_feature_intersection_area_sqm
+                           AS outside_feature_area_sqm
+                FROM package_union p
+                JOIN (
+                    SELECT batch_id,count(*)::int AS feature_count,
+                           sum(feature_area_sqm) AS feature_area_sqm
+                    FROM selected GROUP BY batch_id
+                ) t USING (batch_id)
+            ), all_union AS MATERIALIZED (
+                SELECT ST_UnaryUnion(ST_Collect(geom)) AS geom
+                FROM package_stats
+            ), pair_geometries AS MATERIALIZED (
+                SELECT p1.package_areasymbol AS package_a,
+                       p2.package_areasymbol AS package_b,
+                       ST_Intersection(p1.geom,p2.geom) AS geom
+                FROM package_stats p1
+                JOIN package_stats p2
+                  ON p1.package_areasymbol < p2.package_areasymbol
+                 AND ST_Intersects(p1.geom,p2.geom)
+            ), pair_stats AS (
+                SELECT package_a,package_b,geom,
+                       ST_Area(ST_Transform(geom,5070)) AS area_sqm
+                FROM pair_geometries
+            ), aoi_gap AS (
+                SELECT ST_Difference(a.geom,COALESCE(u.geom,
+                           ST_GeomFromText('GEOMETRYCOLLECTION EMPTY',4326))) AS geom
+                FROM aoi a CROSS JOIN all_union u
+            )
+            SELECT jsonb_build_object(
+                'aoi', (SELECT jsonb_build_object(
+                    'aoi_id',%s::text,'aoi_revision',%s::integer,'area_sqm',area_sqm,
+                    'geometry',geojson) FROM aoi),
+                'coverage', jsonb_build_object(
+                    'covered_area_sqm',COALESCE(ST_Area(ST_Transform(u.geom,5070)),0),
+                    'uncovered_area_sqm',COALESCE(a.area_sqm,0) -
+                        COALESCE(ST_Area(ST_Transform(u.geom,5070)),0),
+                    'outside_aoi_feature_area_sqm',
+                        COALESCE((SELECT sum(feature_area_sqm -
+                            sum_feature_intersection_area_sqm) FROM package_stats),0),
+                    'outside_aoi_union_area_sqm',
+                        COALESCE((SELECT ST_Area(ST_Transform(
+                            ST_Difference(ST_UnaryUnion(ST_Collect(s.geom)),a.geom),5070))
+                            FROM selected s),0),
+                    'overlap_area_sqm',COALESCE((SELECT sum(area_sqm)
+                        FROM pair_stats WHERE area_sqm > 0),0),
+                    'overlap_pair_count',COALESCE((SELECT count(*)::int
+                        FROM pair_stats WHERE area_sqm > 0),0),
+                    'gap_component_count',COALESCE(ST_NumGeometries(g.geom),0),
+                    'within_package_overlap_area_sqm',COALESCE((SELECT sum(
+                        sum_feature_intersection_area_sqm-coverage_area_sqm)
+                        FROM package_stats),0)),
+                'gap_geometry',(SELECT ST_AsGeoJSON(geom,9,0)::jsonb FROM aoi_gap),
+                'packages',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                    'batch_id',batch_id,'package_areasymbol',package_areasymbol,
+                    'package_name',package_name,
+                    'source_snapshot_id',source_snapshot_id,
+                    'source_version_id',source_version_id,'candidate_id',candidate_id,
+                    'ingestion_run_id',ingestion_run_id,'source_crs',source_crs,
+                    'analysis_crs',analysis_crs,'feature_count',feature_count,
+                    'intersecting_feature_count',intersecting_feature_count,
+                    'feature_area_sqm',feature_area_sqm,
+                    'coverage_area_sqm',coverage_area_sqm,
+                    'sum_feature_intersection_area_sqm',sum_feature_intersection_area_sqm,
+                    'outside_feature_area_sqm',outside_feature_area_sqm,
+                    'coverage_geometry',ST_AsGeoJSON(geom,9,0)::jsonb)
+                    ORDER BY package_areasymbol) FROM package_stats),'[]'::jsonb),
+                'overlaps',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                    'package_a',package_a,'package_b',package_b,'area_sqm',area_sqm,
+                    'geometry',ST_AsGeoJSON(geom,9,0)::jsonb)
+                    ORDER BY package_a,package_b) FROM pair_stats
+                    WHERE area_sqm > 0),'[]'::jsonb)) AS result
+            FROM aoi a CROSS JOIN all_union u CROSS JOIN aoi_gap g
+        """
+        connection = self._connect()
+        try:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION READ ONLY")
+                row = connection.execute(
+                    query,
+                    (aoi_id, aoi_revision, batch_ids, aoi_id, aoi_revision),
+                ).fetchone()
+        finally:
+            connection.close()
+        if row is None or row[0] is None:
+            raise KeyError(f"Unknown AOI revision: {aoi_id}/{aoi_revision}")
+        result = row[0]
+        if isinstance(result, str):
+            result = json.loads(result)
+        result["batch_ids"] = list(batch_ids)
+        return result
 
     def screen_ssurgo_snapshot(
         self, source_snapshot_id: str, source_version_id: str, aoi_geometry_wkt: str
