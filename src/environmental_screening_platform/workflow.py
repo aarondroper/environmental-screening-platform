@@ -28,7 +28,7 @@ from .models import (
     SourceResult,
     utc_now,
 )
-from .raster import screen_nlcd_raster
+from .raster import screen_3dep_raster, screen_nlcd_raster
 from .spatial import PostGISUnavailable, SpatialRepository
 from .store import read_json, write_json
 
@@ -309,6 +309,85 @@ def _result_from_snapshot(
                 "NLCD classes are land-cover classifications, not regulatory constraints or suitability conclusions.",
             ],
         )
+    if source_id == "3dep" and status == "active":
+        raster_provenance = dict(provenance)
+        if aoi_geometry_wkt is None:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative 3DEP fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status="fixture_only",
+                attempt_status=AttemptStatus.FAILED,
+                provenance=raster_provenance,
+                reason="Snapshot-pinned 3DEP screening requires the job AOI geometry.",
+            )
+        artifact_path = raster_provenance.get("artifact_path")
+        if not artifact_path:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative 3DEP fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status="fixture_only",
+                attempt_status=AttemptStatus.FAILED,
+                provenance=raster_provenance,
+                reason="The snapshotted 3DEP source has no external raster artifact path.",
+            )
+        try:
+            screened = screen_3dep_raster(
+                Path(artifact_path),
+                shapely_wkt.loads(aoi_geometry_wkt),
+                source_snapshot_id=snapshot["snapshot_id"],
+                source_version_id=snapshot["version_id"],
+                provenance=raster_provenance,
+            )
+        except (OSError, RasterioError, ValueError) as exc:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative 3DEP fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status="fixture_only",
+                attempt_status=AttemptStatus.FAILED,
+                provenance=raster_provenance,
+                reason=f"Snapshot-pinned 3DEP raster could not be screened: {exc}",
+            )
+        raster_provenance.update(screened["provenance"])
+        warnings = [
+            "3DEP is a representative fixture/smoke raster; full regional coverage and production readiness are not established.",
+            "Elevation values are reported in the source raster's declared units/datum; no conversion or derived slope is applied.",
+        ]
+        if not screened["metrics"].get("elevation_units") or not screened["metrics"].get(
+            "vertical_datum"
+        ):
+            warnings.append(
+                "The screened 3DEP artifact does not declare complete vertical units/datum metadata; values are not reinterpreted."
+            )
+        return SourceResult(
+            source_id=source_id,
+            validation_status=Maturity(snapshot["source_maturity"]),
+            validation_scope=validation.get(
+                "validation_scope", "Representative 3DEP fixture only."
+            ),
+            coverage_status=Coverage(screened["coverage_status"]),
+            observation_status=Observation(screened["observation_status"]),
+            product_status="fixture_only",
+            attempt_status=AttemptStatus.VALIDATED,
+            metrics=screened["metrics"],
+            provenance=raster_provenance,
+            warnings=warnings,
+            features=screened.get("features", []),
+        )
     metrics = validation.get("metrics", {}) if isinstance(validation, dict) else {}
     return SourceResult(
         source_id=source_id,
@@ -461,6 +540,8 @@ def create_job(
         raise ValueError("The SSURGO fixture-only mode requires source_ids=['ssurgo']")
     if screening_mode == "nlcd_fixture_only" and selected_sources != ["annual_nlcd"]:
         raise ValueError("The NLCD fixture-only mode requires source_ids=['annual_nlcd']")
+    if screening_mode == "3dep_fixture_only" and selected_sources != ["3dep"]:
+        raise ValueError("The 3DEP fixture-only mode requires source_ids=['3dep']")
     job_id = _id()
     job = {
         "job_id": job_id,
@@ -523,6 +604,8 @@ def run_job(
             raise ValueError("The SSURGO fixture-only mode cannot run a multi-source job")
         if effective_screening_mode == "nlcd_fixture_only" and job["source_ids"] != ["annual_nlcd"]:
             raise ValueError("The NLCD fixture-only mode cannot run a multi-source job")
+        if effective_screening_mode == "3dep_fixture_only" and job["source_ids"] != ["3dep"]:
+            raise ValueError("The 3DEP fixture-only mode cannot run a multi-source job")
         project = read_json(paths["projects"] / job["project_id"] / "project.json")
         revision_path = (
             paths["projects"] / job["project_id"] / "aoi-revisions" / f"{job['aoi_id']}.json"
@@ -558,7 +641,7 @@ def run_job(
                     "snapshot_reason": source_result.reason,
                     "source_status": (
                         source_result.metrics.get("source_status") or effective_snapshot_status
-                        if snapshot["source_id"] in {"ssurgo", "annual_nlcd"}
+                        if snapshot["source_id"] in {"ssurgo", "annual_nlcd", "3dep"}
                         else None
                     ),
                 }

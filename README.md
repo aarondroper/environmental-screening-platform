@@ -56,6 +56,15 @@ For the bounded Annual NLCD path:
 
 This creates a single-source `nlcd_fixture_only` job. It reads only the exact snapshotted external GeoTIFF, reports footprint coverage, valid/nodata pixels, source class counts/percentages, and raster CRS/grid provenance, and does not claim full regional coverage or production readiness. NLCD pixels are summarized in JSON/CSV; no misleading pixel geometries are added to GeoJSON.
 
+For the bounded 3DEP elevation path:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" screen-3dep-fixture \
+  --project-id PROJECT_ID
+```
+
+This creates a single-source `3dep_fixture_only` job. It reads only the exact snapshotted external DEM, reports footprint coverage, valid/nodata cells, raw elevation statistics, CRS/grid/nodata metadata, and vertical units/datum when declared. It performs no unit/datum conversion or slope calculation. A covered result may include one raster-footprint feature in GeoJSON; pixel geometries are not generated, and full regional coverage is not claimed.
+
 The SSURGO command creates a single-source `ssurgo_fixture_only` job. It reports exact snapshot/version provenance, fixture-only status, covered/uncovered AOI area, map-unit/component metrics, and hydric-soil attributes. It never selects latest data or claims regional SSURGO coverage. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. Active regional canonical environmental layers and regional tiling are not implemented.
 
 Source ingestion is separately available as a candidate-first operator workflow. For example:
@@ -72,8 +81,8 @@ Source ingestion is separately available as a candidate-first operator workflow.
 
 `ingest` creates an inactive candidate; promotion is a separate explicit step. `retry-ingestion --run-id RUN_ID` creates a new linked run and preserves the prior attempt. Candidate metadata, acquisition attempts, validations, decisions, the active-version pointer, and immutable job source snapshots are stored transactionally in a local SQLite catalog under the external data directory. Artifacts are rehashed at registration, promotion, and job snapshot/use boundaries. PAD-US remains quarantined/conditional and FEMA remains blocked; neither is acquired or promotable. This catalog is a local metadata/control store only; the separate optional PostGIS repository contains the representative SSURGO fixture under explicit snapshot/version linkage and does not activate it for regional screening.
 
-The exports are a JSON source/result record, CSV with one row per source and provenance/state, and GeoJSON with the AOI plus valid SSURGO map-unit polygons produced by that run. NLCD is summarized in JSON/CSV and does not create pixel geometries. Hydric ratings remain component-level soil data, not a wetlands inventory or regulatory wetland determination. The result is preliminary; missing or incomplete data are not treated as no constraint, and no composite score is calculated.
+The exports are a JSON source/result record, CSV with one row per source and provenance/state, and GeoJSON with the AOI plus valid SSURGO map-unit polygons produced by that run. NLCD is summarized in JSON/CSV and does not create pixel geometries; 3DEP may add one meaningful raster-footprint feature. Hydric ratings remain component-level soil data, not a wetlands inventory or regulatory wetland determination. The result is preliminary; missing or incomplete data are not treated as no constraint, and no composite score is calculated.
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census AOI and representative fixture-only SSURGO tables; NLCD fixture screening retains rasters externally and does not add pixel tables. Docker/psycopg availability is environment-dependent. Live small-AOI source requests and NLCD/SSURGO fixture screening are not final source approval, production validation, or regional coverage proof. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census AOI and representative fixture-only SSURGO tables; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Live small-AOI source requests and NLCD/3DEP/SSURGO fixture screening are not final source approval, production validation, or regional coverage proof. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.

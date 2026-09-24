@@ -74,6 +74,13 @@ def _parser() -> argparse.ArgumentParser:
     nlcd_submit.add_argument("--project-id", required=True)
     nlcd_submit.add_argument("--aoi-id")
 
+    dep_submit = sub.add_parser(
+        "screen-3dep-fixture",
+        help="Run one explicitly fixture-only 3DEP elevation screening job",
+    )
+    dep_submit.add_argument("--project-id", required=True)
+    dep_submit.add_argument("--aoi-id")
+
     status = sub.add_parser("job-status", help="Show job lifecycle and source attempts")
     status.add_argument("--job-id", required=True)
 
@@ -179,6 +186,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.aoi_id,
             source_ids=("annual_nlcd",),
             screening_mode="nlcd_fixture_only",
+        )
+        result = run_job(job["job_id"], args.data_dir)
+        outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
+    elif args.command == "screen-3dep-fixture":
+        job = create_job(
+            args.project_id,
+            args.data_dir,
+            args.aoi_id,
+            source_ids=("3dep",),
+            screening_mode="3dep_fixture_only",
         )
         result = run_job(job["job_id"], args.data_dir)
         outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}

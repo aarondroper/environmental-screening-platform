@@ -6,7 +6,7 @@ This is the prioritized roadmap of remaining project work. It is organized into 
 
 Milestones may be refined as evidence arrives, but agents must not silently alter product scope, scientific methodology, important datasets, or operating cost without crossing the decision boundary in `AGENTS.md`.
 
-Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot; 2B.4 adds an optional local PostGIS AOI repository boundary; 2B.5 adds a fixture-only SSURGO map-unit/component staging and promotion path; 2B.6 consumes only the matching fixture-only SSURGO rows in a bounded screening job; the next NLCD slice consumes only the matching external raster artifact in an explicit fixture-only mode. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
+Current status: Northern Colorado and the five-source MVP direction are owner-selected. Final Milestone 1 source approval remains open for full regional PAD-US coverage/repair results and FEMA technical access/effective-pending validation. The exact 2025 boundary is validated. NLCD, 3DEP, and SSURGO representative samples passed bounded validation, and one small live AOI smoke passed for their implemented adapters. Milestone 2B.1 is a local file-backed ETL/screening slice; 2B.2 adds durable SQLite source-version/run/candidate metadata and explicit safe promotion; 2B.3 binds each screening job to an immutable source snapshot; 2B.4 adds an optional local PostGIS AOI repository boundary; 2B.5 adds a fixture-only SSURGO map-unit/component staging and promotion path; 2B.6 consumes only the matching fixture-only SSURGO rows in a bounded screening job; 2B.7 consumes only the matching NLCD raster artifact in an explicit fixture-only mode; 2B.8 consumes only the matching 3DEP raster artifact in an explicit fixture-only mode. These remain a local prototype, not a production platform or final source approval. See `PROJECT_STATE.md` for measured integration artifacts and precise limits.
 
 ## Milestone 1 — Geography and source feasibility
 
@@ -36,7 +36,7 @@ Current status: Northern Colorado and the five-source MVP direction are owner-se
 
 **Objective:** Define the analyst workflow, result structure, source-specific metrics, and preliminary-screening limitations.
 
-**Status:** Milestone 2A contract definition, controlled Milestones 2B.1–2B.6 slices, and bounded snapshot-pinned NLCD fixture screening are complete. Final Milestone 1 source approval remains open for complete regional PAD-US coverage/repair statistics and FEMA technical access/effective-pending validation. The implementation is local and incomplete; it does not enable production/region-wide conclusions.
+**Status:** Milestone 2A contract definition, controlled Milestones 2B.1–2B.6 slices, and bounded snapshot-pinned NLCD and 3DEP fixture screening are complete. Final Milestone 1 source approval remains open for complete regional PAD-US coverage/repair statistics and FEMA technical access/effective-pending validation. The implementation is local and incomplete; it does not enable production/region-wide conclusions.
 
 **Major deliverables:**
 
@@ -111,9 +111,17 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Explicit limits:** The raster is a representative fixture/smoke artifact. Full regional windowing/mosaic strategy and production source readiness remain unresolved. No composite interpretation or regulatory land-cover conclusion is produced.
 
+## Milestone 2B.8 — Snapshot-pinned 3DEP fixture screening
+
+**Status:** Implemented as an explicit `3dep_fixture_only` local path. It reads only the exact external DEM identified by the immutable job snapshot, reports footprint coverage, valid/nodata cells, raw elevation statistics and raster metadata, and keeps pixels outside PostGIS. It does not claim full regional 3DEP coverage or production readiness.
+
+**Verified scope:** Deterministic and validated-external-fixture tests cover source-version isolation, AOI intersection, valid/nodata accounting, reproducible min/max/mean/percentile metrics, CRS/resolution/transform/nodata and vertical metadata behavior, missing/unavailable artifacts, JSON/CSV provenance, repeated screening, and one meaningful raster-footprint GeoJSON feature. Census, NLCD, SSURGO, PAD-US, and FEMA behavior remains unchanged.
+
+**Explicit limits:** The retained service-window fixture does not declare vertical units or datum, so values are reported without conversion and those fields remain null with a warning. No slope/aspect, flood, landslide, suitability, composite, or regulatory interpretation is produced. Full regional tile/window processing remains unresolved.
+
 ## Next smallest vertical slice — next approved canonical screening pathway
 
-Extend snapshot-pinned screening to the approved 3DEP raster pathway, or complete regional SSURGO survey-area/package sizing if that remains the owner-approved source gate. Preserve the SQLite/PostGIS boundary, fixture maturity states, and explicit unknown/unavailable behavior; do not consume PAD-US or FEMA operationally.
+Complete regional SSURGO survey-area/package sizing if that remains the owner-approved source gate, or extend a later approved source pathway only with the same exact-snapshot and fixture-maturity controls. Preserve the SQLite/PostGIS boundary and explicit unknown/unavailable behavior; do not consume PAD-US or FEMA operationally.
 
 ## Milestone 3 — Repository foundation and local platform
 
