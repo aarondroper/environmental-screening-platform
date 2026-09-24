@@ -18,7 +18,10 @@ from .ingestion import (
 )
 from .spatial import PostGISRepository, PostGISUnavailable, census_boundary_record
 from .ssurgo import parse_ssurgo_fixture
-from .ssurgo_regional import validate_ssurgo_regional_packages
+from .ssurgo_regional import (
+    audit_ssurgo_regional_discrepancies,
+    validate_ssurgo_regional_packages,
+)
 from .workflow import (
     FIXTURE_SCREENING_SOURCES,
     create_job,
@@ -128,6 +131,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     regional_validate.add_argument("--sizing-record", type=Path)
     regional_validate.add_argument("--boundary", type=Path)
+
+    regional_audit = sub.add_parser(
+        "audit-ssurgo-regional-discrepancies",
+        help="Audit acquired SSURGO discrepancies without changing source state",
+    )
+    regional_audit.add_argument("--sizing-record", type=Path)
+    regional_audit.add_argument("--lookup-record", type=Path)
+    regional_audit.add_argument("--boundary", type=Path)
 
     retry_ingest = sub.add_parser("retry-ingestion", help="Create a linked retry ingestion run")
     retry_ingest.add_argument("--run-id", required=True)
@@ -275,6 +286,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = validate_ssurgo_regional_packages(
             args.data_dir,
             sizing_record=args.sizing_record,
+            boundary_path=args.boundary,
+        )
+    elif args.command == "audit-ssurgo-regional-discrepancies":
+        outcome = audit_ssurgo_regional_discrepancies(
+            args.data_dir,
+            sizing_record=args.sizing_record,
+            lookup_record=args.lookup_record,
             boundary_path=args.boundary,
         )
     elif args.command == "retry-ingestion":

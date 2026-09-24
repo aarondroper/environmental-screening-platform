@@ -16,11 +16,13 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 from uuid import uuid4
 from zipfile import BadZipFile, ZipFile
 
 import shapefile
 from pyproj import CRS, Transformer
+from shapely import make_valid
 from shapely.geometry import shape
 from shapely.ops import transform, unary_union
 from shapely.validation import explain_validity
@@ -115,11 +117,57 @@ def _clean(value: Any) -> str:
 
 
 def _date_part(value: str) -> str:
-    match = re.search(r"(\d{2})/(\d{2})/(\d{4})", value)
+    match = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", value)
     if not match:
         return ""
     month, day, year = match.groups()
-    return f"{year}-{month}-{day}"
+    return f"{year}-{int(month):02d}-{int(day):02d}"
+
+
+def _polygon_component_count(geometry: Any) -> int:
+    if geometry.geom_type == "Polygon":
+        return 1
+    if geometry.geom_type == "MultiPolygon":
+        return len(geometry.geoms)
+    if geometry.geom_type == "GeometryCollection":
+        return sum(_polygon_component_count(item) for item in geometry.geoms)
+    return 0
+
+
+def _polygon_ring_count(geometry: Any) -> int:
+    if geometry.geom_type == "Polygon":
+        return 1 + len(geometry.interiors)
+    if geometry.geom_type == "MultiPolygon":
+        return sum(1 + len(item.interiors) for item in geometry.geoms)
+    if geometry.geom_type == "GeometryCollection":
+        return sum(_polygon_ring_count(item) for item in geometry.geoms)
+    return 0
+
+
+def _normalise_survey_name(value: str | None) -> str:
+    normalized = re.sub(r"\barea\b", "", _clean(value).casefold())
+    normalized = " ".join(normalized.split())
+    return re.sub(r"\s+([,])", r"\1", normalized)
+
+
+def _classify_identity(
+    *,
+    package_name: str,
+    official_name: str,
+    identifiers_match: bool,
+    release_match: bool,
+    url_match: bool,
+    manifest_match: bool,
+    additional_names: tuple[str, ...] = (),
+) -> str:
+    if not all((identifiers_match, release_match, url_match, manifest_match)):
+        return "source_package_mismatch"
+    names = (package_name, official_name, *additional_names)
+    if len(set(names)) == 1:
+        return "confirmed_identity"
+    if len({_normalise_survey_name(name) for name in names}) == 1:
+        return "harmless_naming_variation"
+    return "unresolved_identity"
 
 
 def _layer_report(
@@ -324,6 +372,290 @@ def validate_ssurgo_package_archive(
     ) as exc:
         report["issues"].append(f"package parse error: {type(exc).__name__}: {exc}")
     report["status"] = "passed" if not report["issues"] else "failed"
+    return report
+
+
+def _package_identity_audit(
+    archive: ZipFile,
+    root: str,
+    spec: SsurgoPackageSpec,
+    *,
+    lookup_record: dict[str, Any] | None,
+    manifest_entry: dict[str, Any] | None,
+) -> dict[str, Any]:
+    members = {name.lower(): name for name in archive.namelist()}
+
+    def table(name: str) -> list[list[str]]:
+        member = members.get(f"{root.lower()}/tabular/{name}".lower())
+        return _table(archive, member) if member else []
+
+    legend_rows = table("legend.txt")
+    sacatalog_rows = table("sacatlog.txt")
+    legend_name = _clean(legend_rows[0][2]) if legend_rows and len(legend_rows[0]) > 2 else ""
+    sacatalog_name = (
+        _clean(sacatalog_rows[0][1]) if sacatalog_rows and len(sacatalog_rows[0]) > 1 else ""
+    )
+    package_names = [name for name in (legend_name, sacatalog_name) if name]
+
+    metadata_names: list[str] = []
+    metadata_member = members.get(f"{root.lower()}/soil_metadata_{spec.areasymbol.lower()}.txt")
+    if metadata_member:
+        metadata_text = archive.read(metadata_member).decode("utf-8", errors="replace")
+        metadata_names.extend(
+            match.strip()
+            for match in re.findall(r"Title:\s+Soil Survey of ([^\r\n]+)", metadata_text)
+        )
+        metadata_names.extend(
+            match.strip()
+            for match in re.findall(r"Resource_Description:\s+([^\r\n]+?)\s+SSURGO", metadata_text)
+        )
+
+    official_name = _clean((lookup_record or {}).get("areaname")) or spec.areaname
+    package_name = legend_name or sacatalog_name
+    package_symbol = _clean(legend_rows[0][1]) if legend_rows and len(legend_rows[0]) > 1 else ""
+    catalog_symbol = _clean(sacatalog_rows[0][0]) if sacatalog_rows else ""
+    catalog_version = (
+        _clean(sacatalog_rows[0][2]) if sacatalog_rows and len(sacatalog_rows[0]) > 2 else ""
+    )
+    catalog_date = (
+        _date_part(_clean(sacatalog_rows[0][3]))
+        if sacatalog_rows and len(sacatalog_rows[0]) > 3
+        else ""
+    )
+    expected_date = spec.saverest_provider.split("T", 1)[0]
+
+    decoded_url = unquote(spec.package_url)
+    package_url_name = Path(urlparse(decoded_url).path).name
+    url_match = (
+        spec.areasymbol in decoded_url
+        and expected_date in decoded_url
+        and spec.provider_package_identifier == package_url_name
+    )
+    manifest_url = _clean(
+        (manifest_entry or {}).get("url") or (manifest_entry or {}).get("final_url")
+    )
+    manifest_match = bool(
+        manifest_entry
+        and manifest_entry.get("sha256")
+        and manifest_entry.get("release_version") == spec.provider_release
+        and manifest_url == spec.package_url
+    )
+    identifiers_match = (
+        package_symbol == spec.areasymbol
+        and catalog_symbol == spec.areasymbol
+        and package_name == sacatalog_name
+    )
+    release_match = (
+        catalog_version == str(spec.saversion)
+        and catalog_date == expected_date
+        and str((lookup_record or {}).get("saversion", spec.saversion)) == str(spec.saversion)
+        and _date_part(str((lookup_record or {}).get("saverest", ""))) == expected_date
+    )
+    classification = _classify_identity(
+        package_name=package_name,
+        official_name=official_name,
+        identifiers_match=identifiers_match,
+        release_match=release_match,
+        url_match=url_match,
+        manifest_match=manifest_match,
+        additional_names=(spec.areaname,),
+    )
+    return {
+        "classification": classification,
+        "package_metadata": {
+            "legend_name": legend_name,
+            "sacatlog_name": sacatalog_name,
+            "soil_metadata_names": metadata_names,
+            "package_symbol": package_symbol,
+            "sacatlog_symbol": catalog_symbol,
+            "saversion": catalog_version,
+            "saverest_date": catalog_date,
+        },
+        "sda_metadata": {
+            "source_path": "ssurgo/ssurgo_area_release_inventory.json",
+            "areasymbol": (lookup_record or {}).get("areasymbol"),
+            "areaname": (lookup_record or {}).get("areaname"),
+            "saversion": (lookup_record or {}).get("saversion"),
+            "saverest": (lookup_record or {}).get("saverest"),
+        },
+        "official_survey_area_lookup": {
+            "source_path": "ssurgo/ssurgo_area_release_inventory.json",
+            "areasymbol": (lookup_record or {}).get("areasymbol"),
+            "areaname": (lookup_record or {}).get("areaname"),
+        },
+        "sizing_record": {
+            "source_path": str(SSURGO_REGIONAL_SIZING),
+            "areasymbol": spec.areasymbol,
+            "areaname": spec.areaname,
+            "provider_release": spec.provider_release,
+        },
+        "package_url": {
+            "url": spec.package_url,
+            "decoded_filename": package_url_name,
+            "areasymbol_in_url": spec.areasymbol in decoded_url,
+            "release_date_in_url": expected_date in decoded_url,
+            "matches_sizing_identifier": url_match,
+        },
+        "manifest": {
+            "present": manifest_entry is not None,
+            "source": (manifest_entry or {}).get("source"),
+            "url": manifest_url or None,
+            "release_version": (manifest_entry or {}).get("release_version"),
+            "sha256": (manifest_entry or {}).get("sha256"),
+            "matches_package_release_and_url": manifest_match,
+        },
+        "comparison": {
+            "package_names_agree": bool(package_names) and len(set(package_names)) == 1,
+            "package_symbol_matches": identifiers_match,
+            "release_matches": release_match,
+            "package_url_matches": url_match,
+            "manifest_matches": manifest_match,
+        },
+        "decision_note": (
+            "Package and official identifiers/release/URL evidence agree; the name differs only by "
+            "the word 'Area'."
+            if classification == "harmless_naming_variation"
+            else "No naming or source identity discrepancy was observed."
+            if classification == "confirmed_identity"
+            else "Identity requires owner/provider review before regional staging."
+        ),
+    }
+
+
+def _invalid_geometry_diagnostics(
+    archive: ZipFile, root: str, spec: SsurgoPackageSpec
+) -> list[dict[str, Any]]:
+    members = {name.lower(): name for name in archive.namelist()}
+    base = f"{root.lower()}/spatial/soilmu_a_{spec.areasymbol.lower()}"
+    reader = shapefile.Reader(
+        shp=io.BytesIO(archive.read(members[f"{base}.shp"])),
+        shx=io.BytesIO(archive.read(members[f"{base}.shx"])),
+        dbf=io.BytesIO(archive.read(members[f"{base}.dbf"])),
+    )
+    mapunit_member = members[f"{root.lower()}/tabular/mapunit.txt"]
+    component_member = members[f"{root.lower()}/tabular/comp.txt"]
+    mapunit_rows = _table(archive, mapunit_member)
+    component_rows = _table(archive, component_member)
+    mapunit_ids = {_clean(row[23]) for row in mapunit_rows if len(row) == 24 and _clean(row[23])}
+    component_counts = Counter(
+        _clean(row[107]) for row in component_rows if len(row) == 109 and _clean(row[107])
+    )
+    to_analysis = Transformer.from_crs(4326, 5070, always_xy=True).transform
+    diagnostics: list[dict[str, Any]] = []
+    for index, (item, record) in enumerate(zip(reader.shapes(), reader.records(), strict=True)):
+        geometry = shape(item.__geo_interface__)
+        if geometry.is_empty or geometry.is_valid:
+            continue
+        values = record.as_dict()
+        mukey = _clean(values.get("MUKEY"))
+        repaired = make_valid(geometry)
+        original_area = transform(to_analysis, geometry).area
+        repaired_area = transform(to_analysis, repaired).area
+        attributes_joinable = (
+            _clean(values.get("AREASYMBOL")) == spec.areasymbol
+            and mukey in mapunit_ids
+            and component_counts[mukey] > 0
+        )
+        diagnostics.append(
+            {
+                "stable_feature_id": f"soilmu_a:{spec.areasymbol}:{mukey}",
+                "package": spec.areasymbol,
+                "layer": "soilmu_a",
+                "source_record_index": index,
+                "mukey": mukey,
+                "musym": _clean(values.get("MUSYM")),
+                "original": {
+                    "valid": False,
+                    "validity_reason": explain_validity(geometry),
+                    "geometry_type": geometry.geom_type,
+                    "polygon_component_count": _polygon_component_count(geometry),
+                    "ring_count": _polygon_ring_count(geometry),
+                    "empty": geometry.is_empty,
+                    "area_epsg5070_m2": original_area,
+                },
+                "derived_make_valid": {
+                    "operation": "shapely.make_valid",
+                    "diagnostic_only": True,
+                    "valid": repaired.is_valid,
+                    "geometry_type": repaired.geom_type,
+                    "polygon_component_count": _polygon_component_count(repaired),
+                    "ring_count": _polygon_ring_count(repaired),
+                    "empty": repaired.is_empty,
+                    "area_epsg5070_m2": repaired_area,
+                    "area_delta_percentage": (
+                        (repaired_area - original_area) / original_area * 100
+                        if original_area
+                        else None
+                    ),
+                },
+                "component_change": {
+                    "polygon_component_delta": _polygon_component_count(repaired)
+                    - _polygon_component_count(geometry),
+                    "ring_delta": _polygon_ring_count(repaired) - _polygon_ring_count(geometry),
+                    "geometry_type_changed": repaired.geom_type != geometry.geom_type,
+                },
+                "attributes": {
+                    "source_attributes_preserved_in_diagnostic": True,
+                    "areasymbol_matches": _clean(values.get("AREASYMBOL")) == spec.areasymbol,
+                    "mapunit_row_present": mukey in mapunit_ids,
+                    "component_row_count": component_counts[mukey],
+                    "remain_joinable": attributes_joinable,
+                },
+            }
+        )
+    return diagnostics
+
+
+def audit_ssurgo_package_discrepancies(
+    artifact_path: Path,
+    spec: SsurgoPackageSpec,
+    *,
+    lookup_record: dict[str, Any] | None = None,
+    manifest_entry: dict[str, Any] | None = None,
+    package_validation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Derive discrepancy diagnostics without writing or promoting any geometry."""
+    report: dict[str, Any] = {
+        "areasymbol": spec.areasymbol,
+        "artifact_path": str(artifact_path),
+        "artifact_sha256": _sha256(artifact_path) if artifact_path.is_file() else None,
+        "artifact_size_bytes": artifact_path.stat().st_size if artifact_path.is_file() else None,
+        "audit_status": "failed",
+        "diagnostic_only": True,
+        "package_validation_status": (package_validation or {}).get("status"),
+        "geometry_crs": "EPSG:5070",
+        "geometry_diagnostics": [],
+        "identity_audit": None,
+        "issues": [],
+        "limitations": [
+            "make_valid output exists only as in-memory diagnostics and is not a staging or canonical artifact.",
+            "No source record was repaired, dropped, clipped, quarantined, or promoted by this audit.",
+        ],
+    }
+    if not artifact_path.is_file():
+        report["issues"].append("candidate artifact is missing")
+        return report
+    try:
+        with ZipFile(artifact_path) as archive:
+            root, _ = _relative_members(archive)
+            report["geometry_diagnostics"] = _invalid_geometry_diagnostics(archive, root, spec)
+            report["identity_audit"] = _package_identity_audit(
+                archive,
+                root,
+                spec,
+                lookup_record=lookup_record,
+                manifest_entry=manifest_entry,
+            )
+            report["audit_status"] = "complete"
+    except (
+        BadZipFile,
+        OSError,
+        ValueError,
+        KeyError,
+        UnicodeDecodeError,
+        shapefile.ShapefileException,
+    ) as exc:
+        report["issues"].append(f"audit parse error: {type(exc).__name__}: {exc}")
     return report
 
 
@@ -664,3 +996,188 @@ def _update_manifest(data_root: Path, reports: list[dict[str, Any]], aggregate_p
     }
     manifest["retrieved_on"] = datetime.now(UTC).date().isoformat()
     write_json(manifest_path, manifest)
+
+
+def _survey_lookup_records(path: Path) -> dict[str, dict[str, Any]]:
+    record = read_json(path)
+    rows = record.get("Table", [])
+    if not rows:
+        return {}
+    headers = [str(header) for header in rows[0]]
+    return {
+        str(row[0]): dict(zip(headers, row, strict=False)) for row in rows[1:] if row and row[0]
+    }
+
+
+def _manifest_artifacts_by_sha(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(entry["sha256"]): entry
+        for entry in manifest.get("artifacts", [])
+        if entry.get("sha256")
+    }
+
+
+def _update_discrepancy_manifest(
+    data_root: Path,
+    reports: list[dict[str, Any]],
+    package_paths: dict[str, Path],
+    aggregate_path: Path,
+) -> None:
+    manifest_path = data_root / "manifest.json"
+    manifest = read_json(manifest_path)
+    by_sha = _manifest_artifacts_by_sha(manifest)
+    for report in reports:
+        entry = by_sha.get(report["artifact_sha256"])
+        if entry is not None:
+            package_path = package_paths[report["areasymbol"]]
+            identity = report.get("identity_audit") or {}
+            entry["discrepancy_audit_report"] = str(package_path)
+            entry["discrepancy_audit_status"] = report["audit_status"]
+            entry["discrepancy_identity_classification"] = identity.get(
+                "classification", "audit_failed"
+            )
+            entry["discrepancy_geometry_count"] = len(report["geometry_diagnostics"])
+            entry["discrepancy_audit_report_sha256"] = _sha256(package_path)
+    manifest["ssurgo_regional_discrepancy_audit"] = {
+        "latest_aggregate_report": str(aggregate_path),
+        "aggregate_report_sha256": _sha256(aggregate_path),
+        "package_count": len(reports),
+        "packages_with_geometry_discrepancies": sum(
+            bool(report["geometry_diagnostics"]) for report in reports
+        ),
+        "packages_with_identity_discrepancies": sum(
+            (report.get("identity_audit") or {}).get("classification") != "confirmed_identity"
+            for report in reports
+        ),
+        "raw_packages_unchanged": True,
+        "catalog_unchanged": True,
+        "postgis_accessed": False,
+    }
+    manifest["retrieved_on"] = datetime.now(UTC).date().isoformat()
+    write_json(manifest_path, manifest)
+
+
+def audit_ssurgo_regional_discrepancies(
+    data_root: Path,
+    *,
+    sizing_record: Path | None = None,
+    lookup_record: Path | None = None,
+    manifest_path: Path | None = None,
+    boundary_path: Path | None = None,
+    repository: SQLiteSourceRepository | None = None,
+) -> dict[str, Any]:
+    """Audit existing regional QA discrepancies without changing source state."""
+    sizing_path = sizing_record or data_root / SSURGO_REGIONAL_SIZING
+    lookup_path = lookup_record or data_root / "ssurgo/ssurgo_area_release_inventory.json"
+    manifest_file = manifest_path or data_root / "manifest.json"
+    specs = load_ssurgo_package_specs(sizing_path)
+    aoi = load_approved_aoi(data_root, boundary_path)
+    catalog = repository or SQLiteSourceRepository(data_root)
+    candidates = catalog.list_candidates("ssurgo")
+    lookup = _survey_lookup_records(lookup_path)
+    manifest = read_json(manifest_file)
+    manifest_by_sha = _manifest_artifacts_by_sha(manifest)
+    run_id = str(uuid4())
+    output_dir = data_root / "ssurgo" / "regional-discrepancy-audit" / run_id
+    package_dir = output_dir / "packages"
+    reports: list[dict[str, Any]] = []
+    for spec in specs:
+        candidate = _candidate_for_spec(candidates, spec)
+        artifact_path = Path(candidate["artifact_path"])
+        package_validation = validate_ssurgo_package_archive(
+            artifact_path,
+            spec,
+            aoi,
+            source_version_id=candidate.get("version_id"),
+            candidate_id=candidate.get("candidate_id"),
+            ingestion_run_id=candidate.get("run_id"),
+            source_url=candidate.get("source_url"),
+            retrieved_at=candidate.get("retrieved_at"),
+        )
+        report = audit_ssurgo_package_discrepancies(
+            artifact_path,
+            spec,
+            lookup_record=lookup.get(spec.areasymbol),
+            manifest_entry=manifest_by_sha.get(package_validation["artifact_sha256"]),
+            package_validation=package_validation,
+        )
+        report["candidate_status"] = candidate.get("status")
+        report["candidate_validation_status"] = candidate.get("validation_status")
+        report["candidate_promotion_status"] = candidate.get("promotion_status")
+        report["package_validation_issues"] = package_validation["issues"]
+        reports.append(report)
+        write_json(package_dir / f"{spec.areasymbol}.json", report)
+
+    diagnostics = [
+        diagnostic for report in reports for diagnostic in report["geometry_diagnostics"]
+    ]
+    classifications = Counter(
+        (report.get("identity_audit") or {}).get("classification", "audit_failed")
+        for report in reports
+    )
+    repaired = [diagnostic["derived_make_valid"] for diagnostic in diagnostics]
+    aggregate = {
+        "audit_id": run_id,
+        "source_id": "ssurgo",
+        "sizing_record": str(sizing_path),
+        "official_lookup": str(lookup_path),
+        "approved_boundary": {
+            "geoids": sorted(APPROVED_GEOIDS),
+            "vintage": 2025,
+            "geometry_type": aoi.geom_type,
+            "component_count": len(aoi.geoms),
+            "crs": SOURCE_CRS,
+        },
+        "status": "completed_with_discrepancies"
+        if diagnostics or any(value != "confirmed_identity" for value in classifications)
+        else "completed",
+        "package_count": len(reports),
+        "package_validation_counts": {
+            "passed": sum(report["package_validation_status"] == "passed" for report in reports),
+            "failed": sum(report["package_validation_status"] == "failed" for report in reports),
+        },
+        "geometry_diagnostics": {
+            "invalid_feature_count": len(diagnostics),
+            "packages_affected": sum(bool(report["geometry_diagnostics"]) for report in reports),
+            "derived_valid_count": sum(item["valid"] for item in repaired),
+            "derived_nonempty_count": sum(not item["empty"] for item in repaired),
+            "geometry_type_change_count": sum(
+                item["component_change"]["geometry_type_changed"] for item in diagnostics
+            ),
+            "polygon_component_change_count": sum(
+                item["component_change"]["polygon_component_delta"] != 0 for item in diagnostics
+            ),
+            "ring_change_count": sum(
+                item["component_change"]["ring_delta"] != 0 for item in diagnostics
+            ),
+            "attributes_joinable_count": sum(
+                item["attributes"]["remain_joinable"] for item in diagnostics
+            ),
+            "max_absolute_area_delta_percentage": max(
+                (abs(item["area_delta_percentage"]) for item in repaired), default=None
+            ),
+            "area_crs": "EPSG:5070",
+        },
+        "identity_classifications": dict(sorted(classifications.items())),
+        "decision_report": {
+            "geometry": "diagnostic_only; no repaired record is accepted for staging or canonical use",
+            "identity": "WY621 and WY721 are harmless naming variations when symbol, release, URL, and manifest evidence agree",
+            "recommendation": "Keep all candidates inactive/incomplete pending owner disposition and any separately authorized staging policy.",
+        },
+        "package_reports": [f"packages/{report['areasymbol']}.json" for report in reports],
+        "raw_packages_unchanged": True,
+        "catalog_unchanged": True,
+        "postgis_accessed": False,
+        "limitations": [
+            "Derived make_valid geometries are diagnostics only and were not persisted.",
+            "The audit does not establish gap-free regional canonical coverage or production readiness.",
+            "Hydric attributes remain soil information, not a wetlands inventory or regulatory determination.",
+        ],
+    }
+    aggregate_path = output_dir / "aggregate.json"
+    write_json(aggregate_path, aggregate)
+    package_paths = {
+        report["areasymbol"]: package_dir / f"{report['areasymbol']}.json" for report in reports
+    }
+    _update_discrepancy_manifest(data_root, reports, package_paths, aggregate_path)
+    return aggregate
