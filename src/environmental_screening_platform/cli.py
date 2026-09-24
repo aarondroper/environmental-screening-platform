@@ -22,6 +22,7 @@ from .ssurgo_regional import (
     audit_ssurgo_regional_discrepancies,
     validate_ssurgo_regional_packages,
 )
+from .ssurgo_regional_staging import stage_ssurgo_regional_packages
 from .workflow import (
     FIXTURE_SCREENING_SOURCES,
     create_job,
@@ -139,6 +140,14 @@ def _parser() -> argparse.ArgumentParser:
     regional_audit.add_argument("--sizing-record", type=Path)
     regional_audit.add_argument("--lookup-record", type=Path)
     regional_audit.add_argument("--boundary", type=Path)
+
+    regional_stage = sub.add_parser(
+        "stage-ssurgo-regional",
+        help="Stage acquired regional SSURGO packages using the audited repair policy",
+    )
+    regional_stage.add_argument("--sizing-record", type=Path)
+    regional_stage.add_argument("--boundary", type=Path)
+    regional_stage.add_argument("--database-url")
 
     retry_ingest = sub.add_parser("retry-ingestion", help="Create a linked retry ingestion run")
     retry_ingest.add_argument("--run-id", required=True)
@@ -293,6 +302,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.data_dir,
             sizing_record=args.sizing_record,
             lookup_record=args.lookup_record,
+            boundary_path=args.boundary,
+        )
+    elif args.command == "stage-ssurgo-regional":
+        outcome = stage_ssurgo_regional_packages(
+            args.data_dir,
+            database_url=args.database_url,
+            sizing_record=args.sizing_record,
             boundary_path=args.boundary,
         )
     elif args.command == "retry-ingestion":

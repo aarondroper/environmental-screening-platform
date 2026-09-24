@@ -15,13 +15,16 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from pyproj import Transformer
+from shapely import wkt
 from shapely.geometry import MultiPolygon, shape
 from shapely.ops import transform, unary_union
 
 from .ssurgo import SsurgoBatchRecord
+from .ssurgo_regional_staging import RegionalPackageStagingRecord
 
 MIGRATION_ID = "001_aoi_revisions"
 SSURGO_MIGRATION_ID = "002_ssurgo_mapunits"
+SSURGO_REGIONAL_STAGING_MIGRATION_ID = "003_ssurgo_regional_staging"
 DEFAULT_DATABASE_URL_ENV = "ESGP_POSTGIS_URL"
 SOURCE_CRS = "EPSG:4269"
 CANONICAL_CRS = "EPSG:4326"
@@ -75,6 +78,10 @@ class SpatialRepository(Protocol):
 
     def screen_ssurgo_snapshot(
         self, source_snapshot_id: str, source_version_id: str, aoi_geometry_wkt: str
+    ) -> dict[str, Any]: ...
+
+    def stage_ssurgo_regional_package(
+        self, package: RegionalPackageStagingRecord
     ) -> dict[str, Any]: ...
 
 
@@ -447,6 +454,254 @@ class PostGISRepository:
                         ),
                     )
         return self.get_ssurgo_batch(batch.batch_id) or {"batch_id": batch.batch_id}
+
+    def stage_ssurgo_regional_package(
+        self, package: RegionalPackageStagingRecord
+    ) -> dict[str, Any]:
+        """Stage one acquired regional package in one idempotent transaction.
+
+        The staging tables retain both original and derived geometries.  This
+        method has no production-promotion path and uses only explicit source
+        package/version identifiers supplied by the caller.
+        """
+        if not package.map_units or not package.features:
+            raise ValueError("A regional SSURGO package must contain map units and features")
+        mapunit_ids = {item.mukey for item in package.map_units}
+        feature_ids = [item.stable_feature_id for item in package.features]
+        if len(feature_ids) != len(set(feature_ids)):
+            raise ValueError("Regional SSURGO features must have unique stable identifiers")
+        if any(item.mukey not in mapunit_ids for item in package.features):
+            raise ValueError("Regional SSURGO feature references an unknown map unit")
+        expected_quarantine = sum(
+            item.geometry_status == "quarantined" for item in package.features
+        )
+        if expected_quarantine != package.quarantine_count:
+            raise ValueError("Regional SSURGO quarantine count does not match feature statuses")
+        if package.source_crs != CANONICAL_CRS or package.analysis_crs != ANALYSIS_CRS:
+            raise ValueError(
+                "Regional SSURGO staging expects EPSG:4326 source and EPSG:5070 analysis CRS"
+            )
+        with self._transaction() as connection:
+            existing = connection.execute(
+                """SELECT batch_id,artifact_sha256,artifact_size_bytes
+                   FROM screening.ssurgo_regional_staging_batches
+                   WHERE source_snapshot_id=%s AND source_version_id=%s""",
+                (package.source_snapshot_id, package.source_version_id),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing[0] != package.batch_id
+                    or existing[1] != package.artifact_sha256
+                    or existing[2] != package.artifact_size_bytes
+                ):
+                    raise ValueError(
+                        "Regional SSURGO source version is already staged with conflicting provenance"
+                    )
+                connection.execute(
+                    """UPDATE screening.ssurgo_regional_staging_batches
+                       SET package_name=%s WHERE batch_id=%s AND package_name IS DISTINCT FROM %s""",
+                    (package.areaname, package.batch_id, package.areaname),
+                )
+                connection.execute(
+                    """UPDATE screening.ssurgo_regional_map_units_staging
+                       SET areaname=%s WHERE batch_id=%s AND areaname IS DISTINCT FROM %s""",
+                    (package.areaname, package.batch_id, package.areaname),
+                )
+                result = self.get_ssurgo_regional_staging_batch(package.batch_id) or {}
+                result["idempotent"] = True
+                return result
+
+            feature_count = len(package.features)
+            map_unit_count = len(package.map_units)
+            component_count = sum(len(item.components) for item in package.map_units)
+            connection.execute(
+                """INSERT INTO screening.ssurgo_regional_staging_batches
+                   (batch_id,source_id,package_areasymbol,package_name,
+                    provider_package_identifier,source_snapshot_id,source_version_id,
+                    ingestion_run_id,candidate_id,source_url,provider_release,retrieved_at,
+                    artifact_path,artifact_sha256,artifact_size_bytes,terms_url,source_crs,
+                    analysis_crs,validation_status,coverage_status,staging_status,
+                    promotion_status,feature_count,map_unit_count,component_count,
+                    original_invalid_count,repaired_accepted_count,quarantined_count,provenance)
+                   VALUES (%s,'ssurgo',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                           %s,%s,%s,'staging_only',%s,%s,%s,%s,%s,%s,%s::jsonb)""",
+                (
+                    package.batch_id,
+                    package.areasymbol,
+                    package.areaname,
+                    package.provider_package_identifier,
+                    package.source_snapshot_id,
+                    package.source_version_id,
+                    package.ingestion_run_id,
+                    package.candidate_id,
+                    package.source_url,
+                    package.provider_release,
+                    package.retrieved_at,
+                    package.artifact_path,
+                    package.artifact_sha256,
+                    package.artifact_size_bytes,
+                    package.terms_url,
+                    package.source_crs,
+                    package.analysis_crs,
+                    package.validation_status,
+                    package.coverage_status,
+                    package.staging_status,
+                    feature_count,
+                    map_unit_count,
+                    component_count,
+                    sum(not item.original_valid for item in package.features),
+                    sum(item.geometry_status == "repaired_accepted" for item in package.features),
+                    package.quarantine_count,
+                    _json(package.provenance),
+                ),
+            )
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """INSERT INTO screening.ssurgo_regional_map_units_staging
+                       (batch_id,mukey,musym,muname,areasymbol,areaname,source_attributes,provenance)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)""",
+                    [
+                        (
+                            package.batch_id,
+                            item.mukey,
+                            item.musym,
+                            item.muname,
+                            item.areasymbol,
+                            item.areaname,
+                            _json(item.source_attributes),
+                            _json({"source_version_id": package.source_version_id}),
+                        )
+                        for item in package.map_units
+                    ],
+                )
+                cursor.executemany(
+                    """INSERT INTO screening.ssurgo_regional_components_staging
+                       (batch_id,mukey,cokey,comppct_r,hydricrating,hydricon,source_attributes,provenance)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)""",
+                    [
+                        (
+                            package.batch_id,
+                            component.mukey,
+                            component.cokey,
+                            component.comppct_r,
+                            component.hydricrating,
+                            component.hydricon,
+                            _json(component.source_attributes),
+                            _json({"source_version_id": package.source_version_id}),
+                        )
+                        for map_unit in package.map_units
+                        for component in map_unit.components
+                    ],
+                )
+                cursor.executemany(
+                    """INSERT INTO screening.ssurgo_regional_features_staging
+                   (batch_id,stable_feature_id,source_record_index,mukey,source_geometry,
+                    derived_geometry,original_valid,original_validity_reason,original_geometry_type,
+                    original_component_count,original_ring_count,original_empty,
+                    original_area_epsg5070_m2,derived_valid,derived_geometry_type,
+                    derived_component_count,derived_ring_count,derived_empty,
+                    derived_area_epsg5070_m2,area_delta_percentage,repair_operation,
+                    geometry_status,attributes_joinable,source_attributes,audited_diagnostic,provenance)
+                   VALUES (%s,%s,%s,%s,ST_GeomFromWKB(%s,4326),ST_GeomFromWKB(%s,4326),
+                           %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                           %s::jsonb,%s::jsonb,%s::jsonb)""",
+                    [
+                        (
+                            package.batch_id,
+                            feature.stable_feature_id,
+                            feature.source_record_index,
+                            feature.mukey,
+                            wkt.loads(feature.source_geometry_wkt).wkb,
+                            wkt.loads(feature.derived_geometry_wkt).wkb,
+                            feature.original_valid,
+                            feature.original_validity_reason,
+                            feature.original_geometry_type,
+                            feature.original_component_count,
+                            feature.original_ring_count,
+                            feature.original_empty,
+                            feature.original_area_epsg5070_m2,
+                            feature.derived_valid,
+                            feature.derived_geometry_type,
+                            feature.derived_component_count,
+                            feature.derived_ring_count,
+                            feature.derived_empty,
+                            feature.derived_area_epsg5070_m2,
+                            feature.area_delta_percentage,
+                            feature.repair_operation,
+                            feature.geometry_status,
+                            feature.attributes_joinable,
+                            _json(feature.source_attributes),
+                            _json(feature.audited_diagnostic)
+                            if feature.audited_diagnostic
+                            else None,
+                            _json(
+                                {
+                                    "source_snapshot_id": package.source_snapshot_id,
+                                    "source_version_id": package.source_version_id,
+                                    "candidate_id": package.candidate_id,
+                                    "ingestion_run_id": package.ingestion_run_id,
+                                }
+                            ),
+                        )
+                        for feature in package.features
+                    ],
+                )
+            counts = connection.execute(
+                """SELECT
+                   (SELECT count(*) FROM screening.ssurgo_regional_map_units_staging WHERE batch_id=%s),
+                   (SELECT count(*) FROM screening.ssurgo_regional_components_staging WHERE batch_id=%s),
+                   (SELECT count(*) FROM screening.ssurgo_regional_features_staging WHERE batch_id=%s)""",
+                (package.batch_id, package.batch_id, package.batch_id),
+            ).fetchone()
+            if counts != (map_unit_count, component_count, feature_count):
+                raise RuntimeError("Regional SSURGO staging count reconciliation failed")
+        return self.get_ssurgo_regional_staging_batch(package.batch_id) or {
+            "batch_id": package.batch_id
+        }
+
+    def get_ssurgo_regional_staging_batch(self, batch_id: str) -> dict[str, Any] | None:
+        with self._transaction() as connection:
+            row = connection.execute(
+                """SELECT batch_id,source_id,package_areasymbol,package_name,
+                          source_snapshot_id,source_version_id,ingestion_run_id,candidate_id,
+                          artifact_path,artifact_sha256,artifact_size_bytes,validation_status,
+                          coverage_status,staging_status,promotion_status,feature_count,
+                          map_unit_count,component_count,original_invalid_count,
+                          repaired_accepted_count,quarantined_count,provenance,created_at::text,
+                          (SELECT count(*) FROM screening.ssurgo_regional_features_staging f
+                           WHERE f.batch_id=b.batch_id AND f.geometry_status='quarantined')
+                       FROM screening.ssurgo_regional_staging_batches b WHERE batch_id=%s""",
+                (batch_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        keys = (
+            "batch_id",
+            "source_id",
+            "package_areasymbol",
+            "package_name",
+            "source_snapshot_id",
+            "source_version_id",
+            "ingestion_run_id",
+            "candidate_id",
+            "artifact_path",
+            "artifact_sha256",
+            "artifact_size_bytes",
+            "validation_status",
+            "coverage_status",
+            "staging_status",
+            "promotion_status",
+            "feature_count",
+            "map_unit_count",
+            "component_count",
+            "original_invalid_count",
+            "repaired_accepted_count",
+            "quarantined_count",
+            "provenance",
+            "created_at",
+            "quarantined_feature_count",
+        )
+        return dict(zip(keys, row, strict=True))
 
     def get_ssurgo_batch(self, batch_id: str) -> dict[str, Any] | None:
         with self._transaction() as connection:
