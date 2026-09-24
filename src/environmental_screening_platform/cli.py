@@ -67,6 +67,13 @@ def _parser() -> argparse.ArgumentParser:
     fixture_submit.add_argument("--aoi-id")
     fixture_submit.add_argument("--database-url")
 
+    nlcd_submit = sub.add_parser(
+        "screen-nlcd-fixture",
+        help="Run one explicitly fixture-only Annual NLCD screening job",
+    )
+    nlcd_submit.add_argument("--project-id", required=True)
+    nlcd_submit.add_argument("--aoi-id")
+
     status = sub.add_parser("job-status", help="Show job lifecycle and source attempts")
     status.add_argument("--job-id", required=True)
 
@@ -164,6 +171,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.data_dir,
             spatial_repository=spatial_repository,
         )
+        outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
+    elif args.command == "screen-nlcd-fixture":
+        job = create_job(
+            args.project_id,
+            args.data_dir,
+            args.aoi_id,
+            source_ids=("annual_nlcd",),
+            screening_mode="nlcd_fixture_only",
+        )
+        result = run_job(job["job_id"], args.data_dir)
         outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
     elif args.command == "job-status":
         outcome = job_status(args.job_id, args.data_dir)

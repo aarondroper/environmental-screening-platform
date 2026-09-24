@@ -29,6 +29,7 @@ class Observation(StrEnum):
     CONSTRAINT_OBSERVED = "constraint_observed"
     NO_CONSTRAINT_OBSERVED = "no_constraint_observed"
     DATA_OBSERVED = "data_observed"
+    NODATA = "nodata"
     NOT_COVERED = "not_covered"
     UNAVAILABLE = "unavailable"
     PENDING_DATA = "pending_data"

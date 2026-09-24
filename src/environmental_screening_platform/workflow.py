@@ -11,6 +11,8 @@ from typing import Any
 
 import requests
 from pyproj import Transformer
+from rasterio.errors import RasterioError
+from shapely import wkt as shapely_wkt
 from shapely.geometry import mapping, shape
 from shapely.ops import transform
 
@@ -26,6 +28,7 @@ from .models import (
     SourceResult,
     utc_now,
 )
+from .raster import screen_nlcd_raster
 from .spatial import PostGISUnavailable, SpatialRepository
 from .store import read_json, write_json
 
@@ -235,6 +238,77 @@ def _result_from_snapshot(
             ],
             features=screened["features"],
         )
+    if source_id == "annual_nlcd" and status == "active":
+        raster_provenance = dict(provenance)
+        if aoi_geometry_wkt is None:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative Annual NLCD fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status="fixture_only",
+                attempt_status=AttemptStatus.FAILED,
+                provenance=raster_provenance,
+                reason="Snapshot-pinned NLCD screening requires the job AOI geometry.",
+            )
+        artifact_path = raster_provenance.get("artifact_path")
+        if not artifact_path:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative Annual NLCD fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status="fixture_only",
+                attempt_status=AttemptStatus.FAILED,
+                provenance=raster_provenance,
+                reason="The snapshotted NLCD source has no external raster artifact path.",
+            )
+        try:
+            screened = screen_nlcd_raster(
+                Path(artifact_path),
+                shapely_wkt.loads(aoi_geometry_wkt),
+                source_snapshot_id=snapshot["snapshot_id"],
+                source_version_id=snapshot["version_id"],
+                provenance=raster_provenance,
+            )
+        except (OSError, RasterioError, ValueError) as exc:
+            return SourceResult(
+                source_id=source_id,
+                validation_status=Maturity(snapshot["source_maturity"]),
+                validation_scope=validation.get(
+                    "validation_scope", "Representative Annual NLCD fixture only."
+                ),
+                coverage_status=Coverage.UNAVAILABLE,
+                observation_status=Observation.UNAVAILABLE,
+                product_status="fixture_only",
+                attempt_status=AttemptStatus.FAILED,
+                provenance=raster_provenance,
+                reason=f"Snapshot-pinned NLCD raster could not be screened: {exc}",
+            )
+        raster_provenance.update(screened["provenance"])
+        return SourceResult(
+            source_id=source_id,
+            validation_status=Maturity(snapshot["source_maturity"]),
+            validation_scope=validation.get(
+                "validation_scope", "Representative Annual NLCD fixture only."
+            ),
+            coverage_status=Coverage(screened["coverage_status"]),
+            observation_status=Observation(screened["observation_status"]),
+            product_status="fixture_only",
+            attempt_status=AttemptStatus.VALIDATED,
+            metrics=screened["metrics"],
+            provenance=raster_provenance,
+            warnings=[
+                "Annual NLCD is a representative fixture/smoke raster; full regional coverage and production readiness are not established.",
+                "NLCD classes are land-cover classifications, not regulatory constraints or suitability conclusions.",
+            ],
+        )
     metrics = validation.get("metrics", {}) if isinstance(validation, dict) else {}
     return SourceResult(
         source_id=source_id,
@@ -385,6 +459,8 @@ def create_job(
     selected_sources = list(source_ids)
     if screening_mode == "ssurgo_fixture_only" and selected_sources != ["ssurgo"]:
         raise ValueError("The SSURGO fixture-only mode requires source_ids=['ssurgo']")
+    if screening_mode == "nlcd_fixture_only" and selected_sources != ["annual_nlcd"]:
+        raise ValueError("The NLCD fixture-only mode requires source_ids=['annual_nlcd']")
     job_id = _id()
     job = {
         "job_id": job_id,
@@ -445,6 +521,8 @@ def run_job(
         effective_screening_mode = screening_mode or job.get("screening_mode", "standard")
         if effective_screening_mode == "ssurgo_fixture_only" and job["source_ids"] != ["ssurgo"]:
             raise ValueError("The SSURGO fixture-only mode cannot run a multi-source job")
+        if effective_screening_mode == "nlcd_fixture_only" and job["source_ids"] != ["annual_nlcd"]:
+            raise ValueError("The NLCD fixture-only mode cannot run a multi-source job")
         project = read_json(paths["projects"] / job["project_id"] / "project.json")
         revision_path = (
             paths["projects"] / job["project_id"] / "aoi-revisions" / f"{job['aoi_id']}.json"
@@ -480,7 +558,7 @@ def run_job(
                     "snapshot_reason": source_result.reason,
                     "source_status": (
                         source_result.metrics.get("source_status") or effective_snapshot_status
-                        if snapshot["source_id"] == "ssurgo"
+                        if snapshot["source_id"] in {"ssurgo", "annual_nlcd"}
                         else None
                     ),
                 }

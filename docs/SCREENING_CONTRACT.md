@@ -1,6 +1,6 @@
 # Screening workflow and product contract — Milestone 2A / 2B
 
-**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus optional PostGIS AOI, representative SSURGO fixture-only storage, and bounded fixture consumption; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement active regional environmental PostGIS source tables/API/queue/frontend behavior.
+**Status:** The intended product contract remains broader than the implementation. Milestone 2B implements a local CLI/job-oriented subset for the Census boundary, NLCD, 3DEP, and SSURGO, plus optional PostGIS AOI, representative SSURGO fixture-only storage, bounded SSURGO fixture consumption, and bounded snapshot-pinned NLCD raster consumption; see `PROJECT_STATE.md` for exact scope. It does not close Milestone 1, approve the final source set, or implement active regional environmental PostGIS source tables/API/queue/frontend behavior.
 
 ## 1. Product boundary
 
@@ -98,6 +98,8 @@ Metrics below are the intended transparent MVP measures. The final values are co
 - Preserve collection, year, grid/CRS, cell size, nodata, request/window, and resampling metadata. Class areas use the delivered/native grid semantics and appropriate ground-area calculation; categorical values are never interpolated.
 - A land-cover class is not a wetland delineation, habitat determination, or regulatory finding. Class 90 does not independently establish wetlands.
 
+For the current bounded raster path, the explicit `nlcd_fixture_only` mode consumes only the external GeoTIFF named by the immutable job snapshot's exact `source_snapshot_id` and `source_version_id`. `screening_status=observed` means valid pixels were summarized; `screening_status=nodata` means nodata cells were encountered and the nodata count remains explicit; `uncovered` means the raster footprint does not intersect the AOI. `source_status=fixture_only` is mandatory for this representative path. Raster coverage area is the AOI intersection with the raster footprint in EPSG:5070; valid/nodata pixel area is an estimated cell-area summary, not a parcel-scale delineation. No categorical resampling is performed.
+
 ### USGS 3DEP 1/3 arc-second
 
 - Report elevation min/max/mean and selected distribution quantiles over valid AOI cells; report valid/nodata coverage and vertical datum/units.
@@ -117,7 +119,7 @@ For the current bounded PostGIS path, `source_status=fixture_only` is mandatory.
 Every completed screening result is an immutable snapshot tied to a project, AOI revision, job, and pinned source set. At minimum, result metadata contains:
 
 - result ID, project ID, AOI ID/revision, input geometry hash, submission/completion timestamps, calculation-contract version, and overall job outcome;
-- screening mode when applicable, including the explicit `ssurgo_fixture_only` mode;
+- screening mode when applicable, including the explicit `ssurgo_fixture_only` and `nlcd_fixture_only` modes;
 - source-level state: source ID, `validation_status`, validation scope, `coverage_status`, observation state, temporal/product status, metrics, warnings, and reasons for missing/partial metrics;
 - source-specific status where applicable, including `source_status=fixture_only`, plus the exact source snapshot and source-version identifiers;
 - source-version lineage: provider and dataset name, release/product year, source item/layer/feature IDs, source URL and actual acquisition URL/request parameters, retrieval time, publisher/effective/revision time when supplied, format, source CRS/grid/datum, terms/attribution URL, and source-declared completeness;
@@ -140,7 +142,7 @@ The target request path validates input and references, pins AOI/source versions
 
 ## 8. Exports and user presentation
 
-- Minimum exports remain CSV summary and GeoJSON spatial findings. An export carries project/AOI identity, source/version and retrieval dates, metric definitions/units, coverage and observation states, source-specific status, warnings, and preliminary-use limitations.
+- Minimum exports remain CSV summary and GeoJSON spatial findings. An export carries project/AOI identity, source/version and retrieval dates, metric definitions/units, coverage and observation states, source-specific status, warnings, and preliminary-use limitations. NLCD raster metrics and raster metadata are included in JSON and CSV; no pixel geometries are fabricated for GeoJSON.
 - GeoJSON includes the AOI and only valid source geometries produced by the run. The current slice exports clipped SSURGO map-unit polygons, not component hydric ratings as spatially delineated features. Raster sources are summarized, not emitted as raster files. Quarantined original geometries are not exported as accepted findings. Include a separate QA/quarantine listing or explicit identifiers/reasons when an acquired source result includes per-AOI quarantines; a prior sample quarantine does not imply that the current AOI is affected.
 - Missing/unavailable/pending/incomplete states must remain explicit in CSV and JSON; do not omit a source row or serialize unknown as numeric zero.
 - GeoPackage and PDF remain optional product decisions and are not implemented here. Exports obey source redistribution terms and preserve attribution.
