@@ -34,6 +34,11 @@ from .ssurgo_packages import (
     load_ssurgo_package_specs,
 )
 from .store import read_json, write_json
+from .three_dep import (
+    THREEDEP_INVENTORY_URL,
+    acquire_3dep_tile,
+    discover_3dep_tile_plan,
+)
 
 ADAPTER_VERSION = __version__
 REQUEST_URLS = {
@@ -503,6 +508,254 @@ def ingest_nlcd_aoi(
         acquirer=acquire,
         requested_url=REQUEST_URLS["annual_nlcd"],
     )
+
+
+def _update_3dep_manifest(
+    data_root: Path,
+    *,
+    batch: dict[str, Any],
+    plan_path: Path,
+) -> Path:
+    """Record 3DEP tile-plan and per-candidate evidence outside Git."""
+    import hashlib
+
+    manifest_path = data_root / "manifest.json"
+    manifest: dict[str, Any] = (
+        read_json(manifest_path)
+        if manifest_path.exists()
+        else {
+            "manifest_version": 1,
+            "retrieved_on": datetime.now(UTC).date().isoformat(),
+            "scope": "External source artifacts and validation records",
+            "artifacts": [],
+            "failed_attempts": [],
+        }
+    )
+    plan = batch["plan"]
+    plan_record = {
+        "source": "USGS 3DEP TNM Access tile plan",
+        "plan_id": batch["plan_id"],
+        "official_url": THREEDEP_INVENTORY_URL,
+        "retrieval_date": plan["inventory_retrieved_at"],
+        "local_path": str(plan_path),
+        "file_size_bytes": plan_path.stat().st_size,
+        "sha256": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
+        "aoi_id": plan["aoi_id"],
+        "aoi_revision": plan["aoi_revision"],
+        "aoi_geometry_sha256": plan["aoi_geometry_sha256"],
+        "selected_tile_count": len(plan["selected_tiles"]),
+        "inventory_total": plan["inventory_total"],
+        "status": batch["status"],
+    }
+    plans: list[dict[str, Any]] = manifest.setdefault("3dep_tile_plans", [])
+    existing_plan = next(
+        (index for index, item in enumerate(plans) if item.get("plan_id") == batch["plan_id"]),
+        None,
+    )
+    if existing_plan is None:
+        plans.append(plan_record)
+    else:
+        plans[existing_plan] = plan_record
+
+    artifacts: list[dict[str, Any]] = manifest.setdefault("artifacts", [])
+    failures: list[dict[str, Any]] = manifest.setdefault("failed_attempts", [])
+    for tile_outcome in batch["tiles"]:
+        candidate = tile_outcome["candidate"]
+        validation = candidate.get("validation") or {}
+        provenance = validation.get("source_provenance") or {}
+        attempts = candidate.get("acquisition_attempts") or []
+        attempt = attempts[-1] if attempts else {}
+        details = attempt.get("details") or {}
+        artifact = {
+            "source": f"USGS 3DEP 1/3 arc-second tile {tile_outcome['tile_id']}",
+            "url": provenance.get("requested_url") or tile_outcome["download_url"],
+            "final_url": provenance.get("source_url") or candidate.get("source_url"),
+            "release_version": candidate.get("provider_release"),
+            "retrieval_date": provenance.get("acquired_at") or candidate.get("retrieved_at"),
+            "local_path": candidate.get("artifact_path"),
+            "file_size_bytes": candidate.get("byte_size"),
+            "provider_reported_size_bytes": provenance.get("provider_reported_size_bytes")
+            or tile_outcome.get("provider_reported_size_bytes")
+            or details.get("provider_reported_size_bytes"),
+            "sha256": candidate.get("sha256"),
+            "license_terms_url": provenance.get("terms_url") or candidate.get("terms_url"),
+            "validation_status": candidate.get("status"),
+            "source_maturity": "validated (tile validation scope; static maturity unchanged)",
+            "candidate_status": candidate.get("status"),
+            "promotion_status": candidate.get("promotion_status"),
+            "run_id": candidate.get("run_id"),
+            "candidate_id": candidate.get("candidate_id"),
+            "source_version_id": candidate.get("version_id"),
+            "plan_id": batch["plan_id"],
+            "tile_id": tile_outcome["tile_id"],
+            "aoi_id": plan["aoi_id"],
+            "aoi_revision": plan["aoi_revision"],
+            "aoi_geometry_sha256": plan["aoi_geometry_sha256"],
+            "request_parameters": provenance.get("request_parameters")
+            or details.get("request_parameters", {}),
+            "http_status": provenance.get("http_status") or details.get("http_status"),
+            "http_headers": provenance.get("response_headers")
+            or details.get("response_headers", {}),
+            "raster_validation": validation.get("metrics", {}),
+            "notes": (
+                "Native official 3DEP tile retained outside Git; no clipping, resampling, "
+                "mosaicking, or activation performed."
+            ),
+        }
+        existing = next(
+            (
+                index
+                for index, current in enumerate(artifacts)
+                if current.get("candidate_id") == artifact["candidate_id"]
+                or (
+                    artifact["sha256"]
+                    and current.get("source") == artifact["source"]
+                    and current.get("sha256") == artifact["sha256"]
+                )
+            ),
+            None,
+        )
+        if existing is None:
+            artifacts.append(artifact)
+        else:
+            artifacts[existing] = artifact
+        if candidate.get("error"):
+            failure = {
+                "source": artifact["source"],
+                "tile_id": artifact["tile_id"],
+                "attempt_date": attempt.get("attempted_at"),
+                "official_url": artifact["url"],
+                "final_url": artifact["final_url"],
+                "run_id": artifact["run_id"],
+                "candidate_id": artifact["candidate_id"],
+                "artifact_path": artifact["local_path"],
+                "sha256": artifact["sha256"],
+                "byte_size": artifact["file_size_bytes"],
+                "provider_reported_size_bytes": artifact["provider_reported_size_bytes"],
+                "http_status": artifact["http_status"],
+                "response_headers": artifact["http_headers"],
+                "request_parameters": artifact["request_parameters"],
+                "result": (candidate.get("error") or {}).get("message"),
+                "classification": "3DEP tile acquisition or validation failure; inactive candidate retained.",
+            }
+            existing_failure = next(
+                (
+                    index
+                    for index, current in enumerate(failures)
+                    if current.get("candidate_id") == failure["candidate_id"]
+                ),
+                None,
+            )
+            if existing_failure is None:
+                failures.append(failure)
+            else:
+                failures[existing_failure] = failure
+    manifest["retrieved_on"] = datetime.now(UTC).date().isoformat()
+    write_json(manifest_path, manifest)
+    return manifest_path
+
+
+def ingest_3dep(
+    data_root: Path,
+    *,
+    project_id: str,
+    aoi_id: str | None = None,
+    repository: SourceRepository | None = None,
+    session: Any | None = None,
+) -> dict[str, Any]:
+    """Plan and acquire official 3DEP tiles for one immutable project AOI."""
+    resolved_root = data_root.resolve()
+    geometry, revision = _aoi_context(resolved_root, project_id, aoi_id)
+    if geometry is None or revision is None:
+        raise ValueError("Generic 3DEP acquisition requires a persisted AOI revision")
+    context = AoiContext.from_revision(revision)
+    repository = cast(
+        SourceRepository,
+        repository if repository is not None else SQLiteSourceRepository(resolved_root),
+    )
+    http_session = session or requests.Session()
+    plan = discover_3dep_tile_plan(http_session, context)
+    plan_id = str(uuid4())
+    plan["plan_id"] = plan_id
+    plan_path = resolved_root / "3dep" / "tile-plans" / f"{plan_id}.json"
+    write_json(plan_path, plan)
+    tile_results: list[dict[str, Any]] = []
+    for tile in plan["selected_tiles"]:
+
+        def acquire(
+            _source_id: str,
+            root: Path,
+            _aoi: Any,
+            callback: Callable[[Acquisition], None],
+            *,
+            selected_tile: dict[str, Any] = tile,
+        ) -> ProviderData:
+            return acquire_3dep_tile(
+                http_session,
+                root,
+                context,
+                selected_tile,
+                plan_id=plan_id,
+                inventory_parameters=plan["inventory_parameters"],
+                acquisition_callback=callback,
+            )
+
+        outcome = ingest_source(
+            "3dep",
+            resolved_root,
+            project_id=project_id,
+            aoi_id=context.aoi_id,
+            repository=repository,
+            acquirer=acquire,
+            requested_url=tile["download_url"],
+        )
+        tile_results.append(
+            {
+                "tile_id": tile["tile_id"],
+                "product_id": tile.get("product_id"),
+                "title": tile.get("title"),
+                "download_url": tile["download_url"],
+                "provider_reported_size_bytes": tile.get("provider_reported_size_bytes"),
+                "run": outcome["run"],
+                "candidate": outcome["candidate"],
+            }
+        )
+    failures = [item for item in tile_results if item["candidate"].get("status") == "failed"]
+    batch = {
+        "plan_id": plan_id,
+        "plan_path": str(plan_path),
+        "source_id": "3dep",
+        "inventory_url": THREEDEP_INVENTORY_URL,
+        "project_id": context.project_id,
+        "aoi_id": context.aoi_id,
+        "aoi_revision": context.revision,
+        "aoi_geometry_sha256": context.geometry_sha256,
+        "status": "failed" if failures else "completed_validation_only",
+        "promotion_status": "not_promoted",
+        "production_ready": False,
+        "selected_tile_count": len(tile_results),
+        "acquired_tile_count": sum(
+            1 for item in tile_results if item["candidate"].get("artifact_path")
+        ),
+        "validated_tile_count": sum(
+            1 for item in tile_results if item["candidate"].get("validation_status") == "validated"
+        ),
+        "failed_tile_count": len(failures),
+        "plan": plan,
+        "tiles": tile_results,
+        "limitations": [
+            "Each selected 1/3-arc-second tile remains an independent inactive candidate; no clipping, mosaicking, resampling, or regional promotion is performed.",
+            "Nodata and uncovered AOI areas remain unknown, not absence of a constraint.",
+            "A tile-level validation pass does not establish complete regional source maturity or production readiness.",
+        ],
+    }
+    batch_path = resolved_root / "3dep" / "tile-acquisition" / f"{plan_id}.json"
+    write_json(batch_path, batch)
+    batch["batch_record_path"] = str(batch_path)
+    batch["manifest_path"] = str(
+        _update_3dep_manifest(resolved_root, batch=batch, plan_path=plan_path)
+    )
+    return batch
 
 
 def retry_ingestion(

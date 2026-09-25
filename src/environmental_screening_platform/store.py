@@ -66,6 +66,7 @@ def fetch_raw(
     json_body: dict[str, Any] | None = None,
     form_body: dict[str, Any] | None = None,
     media_type: str | None = None,
+    recorded_request_parameters: dict[str, Any] | None = None,
     acquisition_callback: Callable[[Acquisition], None] | None = None,
 ) -> tuple[bytes, Acquisition]:
     parsed = urlparse(url)
@@ -172,7 +173,11 @@ def fetch_raw(
         sha256=digest,
         terms_url=terms_url,
         attempts=attempt,
-        request_parameters=params or form_body or (json_body or {}),
+        request_parameters=(
+            recorded_request_parameters
+            if recorded_request_parameters is not None
+            else params or form_body or (json_body or {})
+        ),
         requested_url=url,
         provider_reported_size_bytes=reported_size,
         response_headers=response_headers,

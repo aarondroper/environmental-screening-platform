@@ -17,6 +17,7 @@ from .aoi import (
 from .catalog import SQLiteSourceRepository
 from .ingestion import (
     REQUEST_URLS,
+    ingest_3dep,
     ingest_nlcd_aoi,
     ingest_nlcd_regional,
     ingest_source,
@@ -153,6 +154,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     nlcd_ingest.add_argument("--project-id", required=True)
     nlcd_ingest.add_argument("--aoi-id")
+
+    dep_ingest = sub.add_parser(
+        "ingest-3dep",
+        help="Plan and acquire bounded official 3DEP tiles for a persisted project AOI",
+    )
+    dep_ingest.add_argument("--project-id", required=True)
+    dep_ingest.add_argument("--aoi-id")
 
     regional_validate = sub.add_parser(
         "validate-ssurgo-regional",
@@ -341,6 +349,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         outcome = ingest_nlcd_regional(args.data_dir, boundary_path=args.boundary)
     elif args.command == "ingest-nlcd":
         outcome = ingest_nlcd_aoi(
+            args.data_dir,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+        )
+    elif args.command == "ingest-3dep":
+        outcome = ingest_3dep(
             args.data_dir,
             project_id=args.project_id,
             aoi_id=args.aoi_id,

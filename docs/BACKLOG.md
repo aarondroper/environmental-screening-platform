@@ -11,6 +11,8 @@ Current status: Northern Colorado and the five-source MVP direction are owner-se
 
 ## AOI-agnostic foundation — first refactor
 
+The current AOI-agnostic implementation frontier also includes generic Annual NLCD acquisition and bounded 3DEP tile planning/acquisition; both remain inactive validation-only paths. Generic SSURGO acquisition, raster mosaicking, and arbitrary-AOI production coverage remain future work.
+
 **Status:** Implemented. Generic projects accept valid nonempty WGS84 Polygon/MultiPolygon AOIs. Northern Colorado containment is available only through the explicit `northern_colorado_regression` policy. County IDs, boundary paths, SSURGO package expectations, raster expectations, and fixture metadata are centralized in `regression_fixtures.py` and remain regression configuration.
 
 **Limit:** This does not make NLCD, SSURGO, PAD-US, or FEMA generic production acquisition paths. Source-specific regional commands remain fixture-scoped, and larger-AOI tiling remains future work.
@@ -149,6 +151,14 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 **Verified scope:** Generic WGS84 Polygon/MultiPolygon AOIs outside Northern Colorado are accepted. The native EPSG:5070/30 m grid, nodata value 250, official class domain, AOI footprint accounting, outside-AOI pixels, and nodata/unknown semantics are validated. Oversized requests fail before HTTP with an explicit bounded-request error; no clipping or tiling was added.
 
 **Explicit limits:** Tests use a mocked provider response; no new generic-AOI live acquisition was performed. Candidates remain inactive and NLCD source maturity is unchanged. Generic SSURGO acquisition, source tiling, and arbitrary-AOI production coverage remain future work.
+
+## Milestone 2B.15 — AOI-agnostic 3DEP tile planning and acquisition
+
+**Status:** Implemented with deterministic mocked/local validation. `ingest-3dep` consumes a persisted immutable AOI revision, queries the official TNM Access inventory, writes a deterministic plan before downloads, and records each selected native tile as an inactive candidate through the existing SQLite acquisition/run/version/provenance model.
+
+**Verified scope:** One product per intersecting tile is selected deterministically from official inventory metadata. Per-tile identifiers, URLs, release dates, request parameters, response headers, provider-reported and measured sizes, retrieval timestamps, checksums, AOI revision/geometry hash, external paths, and raster validation are retained. Validation covers readable single-band GeoTIFFs, EPSG:4269, 1/3-arc-second resolution, dimensions, supported datatype, regular transform, nodata `-999999`, footprint coverage, and raw elevation metadata. Nodata/uncovered areas remain unknown, and failed downloads remain explicit candidates/manifest failures. Tests cover discovery, deterministic planning, bounded limits, plan-before-download ordering, checksum/provenance, raster validation, and failed acquisition.
+
+**Explicit limits:** No generic-AOI live tile download was performed. The path does not clip, resample, mosaic, substitute, promote, derive slope/aspect, or claim full regional coverage or production readiness. `screen-3dep-fixture` and Northern Colorado regression behavior remain unchanged. Generic SSURGO acquisition, raster mosaicking, and full source approval remain future work.
 
 ## Completed validation work — regional SSURGO package acquisition
 
