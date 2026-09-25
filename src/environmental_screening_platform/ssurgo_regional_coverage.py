@@ -13,6 +13,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform, unary_union
 
 from .catalog import SQLiteSourceRepository
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .spatial import PostGISRepository
 from .store import read_json, write_json
 
@@ -198,8 +199,9 @@ def _load_candidate_inputs(
         raise ValueError("Coverage analysis requires an incomplete candidate")
     lineage = candidate["validation"].get("lineage", {})
     package_reports = lineage.get("package_reports", [])
-    if len(package_reports) != 19:
-        raise ValueError("Candidate does not contain the expected 19-package lineage")
+    expected_packages = NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_expected_package_count
+    if len(package_reports) != expected_packages:
+        raise ValueError(f"Candidate does not contain the expected {expected_packages}-package lineage")
     batch_ids = [str(item["batch_id"]) for item in package_reports]
     if len(batch_ids) != len(set(batch_ids)):
         raise ValueError("Candidate package lineage contains duplicate staging batches")
@@ -223,7 +225,7 @@ def analyze_ssurgo_regional_coverage(
     candidate, inputs = _load_candidate_inputs(data_root, candidate_id)
     spatial = repository or PostGISRepository(database_url)
     result = spatial.analyze_ssurgo_regional_coverage(
-        inputs["batch_ids"], "northern-colorado-front-range", 1
+        inputs["batch_ids"], NORTHERN_COLORADO_REGRESSION_FIXTURE.aoi_id, 1
     )
     aoi_geometry = shape(result["aoi"]["geometry"])
     gap_geometry = shape(result["gap_geometry"])

@@ -27,18 +27,19 @@ from .models import (
     Observation,
     SourceResult,
 )
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .store import fetch_raw
 
 CENSUS_URL = "https://www2.census.gov/geo/tiger/TIGER2025/COUNTY/tl_2025_us_county.zip"
 NLCD_WCS = "https://dmsdata.cr.usgs.gov/geoserver/wcs"
 NLCD_COVERAGE = "mrlc_Land-Cover_conus_year_data:Land-Cover_conus_year_data"
-NLCD_REGIONAL_CRS = "EPSG:5070"
-NLCD_REGIONAL_RESOLUTION_M = 30.0
-NLCD_REGIONAL_NODATA = 250
+NLCD_REGIONAL_CRS = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.crs
+NLCD_REGIONAL_RESOLUTION_M = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.resolution_m
+NLCD_REGIONAL_NODATA = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.nodata
 # The exact three-county bounding rectangle includes two detached components;
 # its measured provider-snapped window is about 45.7 million cells.
-NLCD_REGIONAL_MAX_CELLS = 50_000_000
-NLCD_RELEASE = "Annual NLCD Collection 1.2, 2025 land cover"
+NLCD_REGIONAL_MAX_CELLS = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.max_cells
+NLCD_RELEASE = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.release
 NLCD_CLASSES = {
     11: "open_water",
     12: "perennial_ice_snow",
@@ -64,7 +65,7 @@ THREEDEP_IMAGE = (
     "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage"
 )
 SSURGO_SDA = "https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest"
-GEOGRAPHY_IDS = {"08013": "Boulder", "08069": "Larimer", "08123": "Weld"}
+GEOGRAPHY_IDS = NORTHERN_COLORADO_REGRESSION_FIXTURE.county_names
 TERMS = {
     "census_boundary": "https://www.census.gov/data/developers/about/terms-of-service.html",
     "annual_nlcd": "https://doi.org/10.5066/P143HE8T",

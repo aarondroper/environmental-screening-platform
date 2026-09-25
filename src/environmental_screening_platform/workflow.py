@@ -10,14 +10,16 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from pyproj import Transformer
 from rasterio.errors import RasterioError
 from shapely import wkt as shapely_wkt
 from shapely.geometry import mapping, shape
-from shapely.ops import transform
 
 from . import __version__
 from .adapters import acquire_boundary
+from .aoi import (
+    AoiValidationPolicy,
+    policy_by_id,
+)
 from .catalog import SQLiteSourceRepository
 from .models import (
     AttemptStatus,
@@ -29,6 +31,7 @@ from .models import (
     utc_now,
 )
 from .raster import screen_3dep_raster, screen_nlcd_raster
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .spatial import PostGISUnavailable, SpatialRepository
 from .store import read_json, write_json
 
@@ -85,7 +88,7 @@ def _repository_paths(data_root: Path) -> dict[str, Path]:
     return {
         "projects": data_root / "workspace" / "projects",
         "jobs": data_root / "workspace" / "jobs",
-        "boundary": data_root / "workspace" / "reference" / "approved_counties.geojson",
+        "boundary": data_root / NORTHERN_COLORADO_REGRESSION_FIXTURE.boundary_cache_relative_path,
     }
 
 
@@ -510,32 +513,35 @@ def _parse_aoi(path: Path) -> tuple[Any, str]:
     return geom, hashlib.sha256(raw).hexdigest()
 
 
-def _validate_aoi(geom: Any, boundary_payload: dict[str, Any]) -> dict[str, Any]:
-    boundary = _boundary_geometry(boundary_payload)
-    if not boundary.covers(geom):
-        raise ValueError(
-            "AOI is not fully contained by the complete approved three-county boundary"
-        )
-    to_area = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True).transform
-    area_sqm = transform(to_area, geom).area
-    return {
-        "crs": "EPSG:4326",
-        "area_crs": "EPSG:5070",
-        "area_sqkm": round(area_sqm / 1_000_000, 6),
-        "bounds": list(geom.bounds),
-    }
+def _validate_aoi(
+    geom: Any,
+    boundary_payload: dict[str, Any] | None = None,
+    *,
+    policy: AoiValidationPolicy | None = None,
+) -> dict[str, Any]:
+    selected_policy = policy or policy_by_id(None)
+    boundary = _boundary_geometry(boundary_payload) if boundary_payload is not None else None
+    return selected_policy.validate(geom, boundary_geometry=boundary)
 
 
 def create_project(
-    name: str, aoi_path: Path, data_root: Path, session: requests.Session | None = None
+    name: str,
+    aoi_path: Path,
+    data_root: Path,
+    session: requests.Session | None = None,
+    *,
+    validation_policy: AoiValidationPolicy | None = None,
 ) -> dict[str, Any]:
     if not name.strip():
         raise ValueError("Project name cannot be blank")
     data_root = _ensure_external_data_root(data_root)
     session = session or requests.Session()
-    boundary = _load_boundary(session, data_root)
+    selected_policy = validation_policy or policy_by_id(None)
+    boundary = (
+        _load_boundary(session, data_root) if selected_policy.boundary_required else None
+    )
     geom, input_hash = _parse_aoi(aoi_path)
-    spatial = _validate_aoi(geom, boundary)
+    spatial = _validate_aoi(geom, boundary, policy=selected_policy)
     project_id = _id()
     aoi_id = _id()
     project = {
@@ -544,6 +550,7 @@ def create_project(
         "created_at": utc_now(),
         "current_aoi_id": aoi_id,
         "current_aoi_revision": 1,
+        "aoi_validation_policy": selected_policy.policy_id,
     }
     revision = {
         "aoi_id": aoi_id,
@@ -553,6 +560,7 @@ def create_project(
         "input_sha256": input_hash,
         "geometry": mapping(geom),
         "spatial_validation": spatial,
+        "validation_policy": selected_policy.policy_id,
     }
     paths = _repository_paths(data_root)
     write_json(paths["projects"] / project_id / "project.json", project)
@@ -560,16 +568,25 @@ def create_project(
     return {"project": project, "aoi_revision": revision}
 
 
-def revise_aoi(project_id: str, aoi_path: Path, data_root: Path) -> dict[str, Any]:
+def revise_aoi(
+    project_id: str,
+    aoi_path: Path,
+    data_root: Path,
+    *,
+    validation_policy: AoiValidationPolicy | None = None,
+) -> dict[str, Any]:
     data_root = _ensure_external_data_root(data_root)
     paths = _repository_paths(data_root)
     project_path = paths["projects"] / project_id / "project.json"
     if not project_path.exists():
         raise FileNotFoundError("Project does not exist")
     project = read_json(project_path)
-    boundary = read_json(paths["boundary"])
+    selected_policy = validation_policy or policy_by_id(project.get("aoi_validation_policy"))
+    boundary = (
+        read_json(paths["boundary"]) if selected_policy.boundary_required else None
+    )
     geom, input_hash = _parse_aoi(aoi_path)
-    spatial = _validate_aoi(geom, boundary)
+    spatial = _validate_aoi(geom, boundary, policy=selected_policy)
     revision = int(project["current_aoi_revision"]) + 1
     aoi_id = _id()
     value = {
@@ -580,6 +597,7 @@ def revise_aoi(project_id: str, aoi_path: Path, data_root: Path) -> dict[str, An
         "input_sha256": input_hash,
         "geometry": mapping(geom),
         "spatial_validation": spatial,
+        "validation_policy": selected_policy.policy_id,
     }
     project["current_aoi_id"] = aoi_id
     project["current_aoi_revision"] = revision

@@ -9,6 +9,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from .aoi import (
+    GENERIC_AOI_POLICY,
+    NORTHERN_COLORADO_REGRESSION_POLICY,
+    policy_by_id,
+)
 from .catalog import SQLiteSourceRepository
 from .ingestion import (
     REQUEST_URLS,
@@ -56,6 +61,12 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--name", required=True)
     create.add_argument(
         "--aoi", type=Path, required=True, help="WGS84 Polygon/MultiPolygon GeoJSON"
+    )
+    create.add_argument(
+        "--aoi-policy",
+        choices=(GENERIC_AOI_POLICY, NORTHERN_COLORADO_REGRESSION_POLICY),
+        default=GENERIC_AOI_POLICY,
+        help="AOI validation policy; Northern Colorado is an explicit regression/demo policy",
     )
 
     revise = sub.add_parser("aoi-revise", help="Create a new immutable AOI revision")
@@ -229,7 +240,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     outcome: Any
     if args.command == "project-create":
-        outcome = create_project(args.name, args.aoi, args.data_dir)
+        outcome = create_project(
+            args.name,
+            args.aoi,
+            args.data_dir,
+            validation_policy=policy_by_id(args.aoi_policy),
+        )
     elif args.command == "aoi-revise":
         outcome = revise_aoi(args.project_id, args.aoi, args.data_dir)
     elif args.command == "screen":

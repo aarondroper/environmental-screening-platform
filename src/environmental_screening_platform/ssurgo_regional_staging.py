@@ -24,6 +24,7 @@ from shapely.ops import transform
 from shapely.validation import explain_validity
 
 from .catalog import SQLiteSourceRepository
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .ssurgo_packages import SSURGO_REGIONAL_SIZING, SsurgoPackageSpec, load_ssurgo_package_specs
 from .ssurgo_regional import (
     _clean,
@@ -458,8 +459,12 @@ def _latest_audit_reports(data_root: Path) -> dict[str, list[dict[str, Any]]]:
     for relative in aggregate.get("package_reports", []):
         report = read_json(aggregate_path.parent / relative)
         result[str(report["areasymbol"])] = report.get("geometry_diagnostics", [])
-    if len(result) != 19:
-        raise ValueError("SSURGO discrepancy report does not contain all 19 package diagnostics")
+    expected_packages = NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_expected_package_count
+    if len(result) != expected_packages:
+        raise ValueError(
+            "SSURGO discrepancy report does not contain all "
+            f"{expected_packages} package diagnostics"
+        )
     return result
 
 

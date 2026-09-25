@@ -15,6 +15,7 @@ from typing import Any
 
 from .catalog import SQLiteSourceRepository
 from .models import Acquisition, source_version_id
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .ssurgo_packages import SSURGO_TERMS_URL
 from .store import read_json, write_json
 
@@ -105,8 +106,12 @@ def _load_staging_inputs(
     package_reports: list[dict[str, Any]] = []
     package_candidates: list[dict[str, Any]] = []
     package_paths = aggregate.get("packages")
-    if not isinstance(package_paths, list) or len(package_paths) != 19:
-        raise ValueError("SSURGO staging aggregate does not list exactly 19 package reports")
+    expected_packages = NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_expected_package_count
+    if not isinstance(package_paths, list) or len(package_paths) != expected_packages:
+        raise ValueError(
+            "SSURGO staging aggregate does not list exactly "
+            f"{expected_packages} package reports"
+        )
     for relative in package_paths:
         report_path = _require_file(
             aggregate_path.parent / str(relative), label="SSURGO package report"

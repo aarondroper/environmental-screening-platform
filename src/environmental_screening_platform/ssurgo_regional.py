@@ -28,6 +28,7 @@ from shapely.ops import transform, unary_union
 from shapely.validation import explain_validity
 
 from .catalog import SQLiteSourceRepository
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .ssurgo_packages import (
     APPROVED_GEOIDS,
     SSURGO_REGIONAL_SIZING,
@@ -54,7 +55,7 @@ EXPECTED_HYDRIC_CONDITIONS = {
 }
 SOURCE_CRS = "EPSG:4326"
 BOUNDARY_SOURCE_CRS = "EPSG:4269"
-APPROVED_BOUNDARY_PATH = Path("geography/canonical/counties_2025.shp")
+APPROVED_BOUNDARY_PATH = NORTHERN_COLORADO_REGRESSION_FIXTURE.canonical_boundary_relative_path
 
 
 def _sha256(path: Path) -> str:

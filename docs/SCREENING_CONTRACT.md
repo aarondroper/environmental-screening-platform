@@ -4,7 +4,7 @@
 
 ## 1. Product boundary
 
-The platform provides preliminary, source-attributed environmental and physical screening for proposed project areas in the owner-approved Boulder, Larimer, and Weld County geography. It reports what selected dataset versions show, where they cover the AOI, and where they do not support a conclusion. It is not an environmental assessment, wetland delineation, flood determination, permit decision, legal opinion, engineering design, or regulatory clearance.
+The platform provides preliminary, source-attributed environmental and physical screening for a user-submitted project AOI. The validated Northern Colorado Boulder/Larimer/Weld geography is a known-good regression/demo fixture and source-validation boundary, not a platform-wide containment requirement. It reports what selected dataset versions show, where they cover the AOI, and where they do not support a conclusion. It is not an environmental assessment, wetland delineation, flood determination, permit decision, legal opinion, engineering design, or regulatory clearance.
 
 There is no composite risk/constraint score, pass/fail suitability verdict, invented regulatory threshold, or implication that missing, unavailable, pending, incomplete, or quarantined information means no constraint exists. Metrics remain separate by source and meaning.
 
@@ -12,12 +12,12 @@ There is no composite risk/constraint score, pass/fail suitability verdict, inve
 
 - A project is a durable named workspace for one consulting/planning case. Project metadata is descriptive, not an analytical input.
 - A project may retain named AOIs. The primary MVP interaction is drawing a Polygon or MultiPolygon on the map; the API contract may accept equivalent GeoJSON geometry. The input CRS is WGS 84 longitude/latitude (EPSG:4326 / RFC 7946 coordinates).
-- Reject empty, invalid, non-polygonal, or out-of-bound AOIs with actionable validation errors. Do not silently repair or clip user AOIs. The AOI must be contained by the complete approved 2025 three-county union, including its detached union components. Preserve holes and multipart structure.
+- Reject empty, invalid, non-polygonal, non-WGS84, or three-dimensional AOIs with actionable validation errors. Do not silently repair or clip user AOIs. A project may explicitly select a named containment policy; the Northern Colorado regression policy requires containment by the complete approved 2025 three-county union, including its detached union components. The generic policy has no platform-wide geography boundary. Preserve holes and multipart structure.
 - Editing an AOI creates a new immutable AOI revision. A screening run binds to exactly one AOI revision; changing the project AOI later never mutates an existing result.
 - A screening request records its submission time, AOI revision, requested source set, and source-version snapshot. It is asynchronous; the request returns a job identifier rather than waiting for all spatial work.
 - A run uses an internally consistent, pinned set of source versions. It must not silently combine an active version with a newer, partly acquired candidate. If a source has no usable version, retain its per-source unavailable/unknown outcome in the result instead of fabricating a zero.
 
-Areas and area fractions are calculated in a suitable equal-area CRS (EPSG:5070 for this geography) and state their units. Distances and lengths, if later added, must likewise declare CRS/measurement semantics. Raster calculations preserve source grid, nodata, and resampling provenance; categorical NLCD must not use interpolating resampling.
+Areas and area fractions are calculated in a suitable declared equal-area CRS (EPSG:5070 for the Northern Colorado fixture) and state their units. Distances and lengths, if later added, must likewise declare CRS/measurement semantics. Raster calculations preserve source grid, nodata, and resampling provenance; categorical NLCD must not use interpolating resampling.
 
 ## 3. Independent source and coverage states
 

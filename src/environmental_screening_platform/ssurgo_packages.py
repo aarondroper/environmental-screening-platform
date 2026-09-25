@@ -24,11 +24,14 @@ from .models import (
     Observation,
     SourceResult,
 )
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .store import fetch_raw
 
-SSURGO_REGIONAL_SIZING = Path("ssurgo/ssurgo_regional_sizing_2026-09-24.json")
+SSURGO_REGIONAL_SIZING = (
+    NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_sizing_record_relative_path
+)
 SSURGO_PACKAGE_MAX_BYTES = 100_000_000
-APPROVED_GEOIDS = frozenset({"08013", "08069", "08123"})
+APPROVED_GEOIDS = frozenset(NORTHERN_COLORADO_REGRESSION_FIXTURE.county_geoids)
 OFFICIAL_PACKAGE_HOST = "websoilsurvey.sc.egov.usda.gov"
 SSURGO_TERMS_URL = (
     "https://www.nrcs.usda.gov/resources/data-and-reports/soil-survey-geographic-database-ssurgo"
@@ -72,8 +75,14 @@ def load_ssurgo_package_specs(path: Path) -> tuple[SsurgoPackageSpec, ...]:
         raise ValueError("SSURGO sizing record does not describe the validated three-component AOI")
 
     raw_areas = record.get("survey_areas")
-    if not isinstance(raw_areas, list) or len(raw_areas) != 19:
-        raise ValueError("SSURGO sizing record must contain exactly 19 survey areas")
+    if (
+        not isinstance(raw_areas, list)
+        or len(raw_areas) != NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_expected_package_count
+    ):
+        raise ValueError(
+            "SSURGO sizing record must contain exactly "
+            f"{NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_expected_package_count} survey areas"
+        )
     specs: list[SsurgoPackageSpec] = []
     seen: set[str] = set()
     for raw in raw_areas:

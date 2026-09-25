@@ -19,6 +19,7 @@ from shapely import wkt
 from shapely.geometry import MultiPolygon, shape
 from shapely.ops import transform, unary_union
 
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .ssurgo import SsurgoBatchRecord
 from .ssurgo_regional_staging import RegionalPackageStagingRecord
 
@@ -29,7 +30,7 @@ DEFAULT_DATABASE_URL_ENV = "ESGP_POSTGIS_URL"
 SOURCE_CRS = "EPSG:4269"
 CANONICAL_CRS = "EPSG:4326"
 ANALYSIS_CRS = "EPSG:5070"
-EXPECTED_COUNTY_GEOIDS = ("08013", "08069", "08123")
+EXPECTED_COUNTY_GEOIDS = NORTHERN_COLORADO_REGRESSION_FIXTURE.county_geoids
 
 
 class PostGISUnavailable(RuntimeError):

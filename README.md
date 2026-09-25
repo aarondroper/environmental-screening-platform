@@ -38,7 +38,16 @@ DATA_DIR=/home/aarondroper/projects/environmental-screening-platform-data/local-
 .venv/bin/screening --data-dir "$DATA_DIR" export --job-id JOB_ID --output-dir "$DATA_DIR/exports"
 ```
 
-AOI input is GeoJSON WGS84 longitude/latitude with one valid Polygon or MultiPolygon fully inside the approved Boulder/Larimer/Weld 2025 county union. AOI changes create new immutable revisions. The first project creation automatically retrieves the official 2025 TIGER/Line national county ZIP if the external boundary cache is absent, then retains only the three approved counties in the runtime boundary. The official archive is about 84 MB; no other national environmental products are downloaded.
+AOI input is GeoJSON WGS84 longitude/latitude with one valid, nonempty Polygon or MultiPolygon. New projects use the generic AOI validation policy and may be outside Northern Colorado; AOI changes create new immutable revisions with the input geometry hash and policy provenance. The Northern Colorado containment rule is an explicit regression/demo policy:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" project-create \
+  --name "Northern Colorado regression" \
+  --aoi /path/to/aoi.geojson \
+  --aoi-policy northern_colorado_regression
+```
+
+That policy automatically retrieves/caches the official 2025 TIGER/Line county ZIP when needed and retains the validated Boulder/Larimer/Weld fixture boundary. The official archive is about 84 MB; no other national environmental products are downloaded. Generic AOI acquisition and source tiling remain future work.
 
 The `screen` command creates a new source snapshot for the requested AOI and currently executes the local worker synchronously. The worker processes only the exact active versions captured at job creation; it does not acquire a newer candidate during execution. When passed `--database-url`, it can consume matching fixture-only SSURGO PostGIS records. The explicitly bounded command below is preferred for that path:
 
@@ -147,4 +156,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Live small-AOI source requests, unified fixture screening, regional SSURGO staging, and inactive candidate materialization are not final source approval, production validation, or regional screening proof. The 19 package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation is implemented, but generic NLCD/SSURGO acquisition, source tiling, and arbitrary-AOI production coverage are not. Live small-AOI source requests, unified fixture screening, regional SSURGO staging, and inactive candidate materialization are not final source approval, production validation, or regional screening proof. The 19 package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.

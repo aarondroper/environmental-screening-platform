@@ -10,7 +10,6 @@ from typing import Any, cast
 from uuid import uuid4
 
 import requests
-from shapely.geometry import shape
 
 from . import __version__
 from .adapters import (
@@ -21,8 +20,10 @@ from .adapters import (
     acquire_nlcd_regional,
     acquire_ssurgo,
 )
+from .aoi import AoiContext
 from .catalog import SourceRepository, SQLiteSourceRepository
 from .models import MATURITY, Acquisition
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .ssurgo_packages import (
     SSURGO_REGIONAL_SIZING,
     SsurgoPackageSpec,
@@ -55,7 +56,8 @@ def _aoi_context(
     revision = read_json(projects / project_id / "aoi-revisions" / f"{selected_aoi}.json")
     if revision["project_id"] != project_id:
         raise ValueError("AOI revision belongs to a different project")
-    return shape(revision["geometry"]), revision
+    context = AoiContext.from_revision(revision)
+    return context.geometry, revision
 
 
 def _default_acquirer(
@@ -123,8 +125,8 @@ def ingest_source(
     if aoi_override is not None:
         aoi = aoi_override
         revision = dict(aoi_metadata or {})
-        revision.setdefault("aoi_id", "northern-colorado-front-range")
-        revision.setdefault("revision", 1)
+        if not revision.get("aoi_id") or revision.get("revision") is None:
+            raise ValueError("An AOI override requires explicit aoi_id and revision metadata")
     else:
         aoi, revision = _aoi_context(data_root.resolve(), project_id, aoi_id)
     if (
@@ -333,9 +335,9 @@ def _update_nlcd_regional_manifest(
         "source_version_id": candidate.get("version_id"),
         "aoi": {
             "boundary_path": str(boundary_path),
-            "geoids": ["08013", "08069", "08123"],
-            "vintage": 2025,
-            "aoi_id": "northern-colorado-front-range",
+            "geoids": list(NORTHERN_COLORADO_REGRESSION_FIXTURE.county_geoids),
+            "vintage": NORTHERN_COLORADO_REGRESSION_FIXTURE.vintage,
+            "aoi_id": NORTHERN_COLORADO_REGRESSION_FIXTURE.aoi_id,
             "revision": 1,
         },
         "request_parameters": request_parameters,
@@ -415,7 +417,7 @@ def ingest_nlcd_regional(
         SourceRepository,
         repository if repository is not None else SQLiteSourceRepository(data_root),
     )
-    boundary = boundary_path or data_root / "geography" / "canonical" / "counties_2025.shp"
+    boundary = boundary_path or data_root / NORTHERN_COLORADO_REGRESSION_FIXTURE.canonical_boundary_relative_path
     aoi = load_approved_aoi(data_root, boundary)
     http_session = session or requests.Session()
 
@@ -435,12 +437,12 @@ def ingest_nlcd_regional(
         requested_url=REQUEST_URLS["annual_nlcd"],
         aoi_override=aoi,
         aoi_metadata={
-            "aoi_id": "northern-colorado-front-range",
+            "aoi_id": NORTHERN_COLORADO_REGRESSION_FIXTURE.aoi_id,
             "revision": 1,
             "project_id": None,
             "geometry_source": str(boundary),
-            "geoids": ["08013", "08069", "08123"],
-            "vintage": 2025,
+            "geoids": list(NORTHERN_COLORADO_REGRESSION_FIXTURE.county_geoids),
+            "vintage": NORTHERN_COLORADO_REGRESSION_FIXTURE.vintage,
         },
     )
     outcome["manifest_path"] = str(
@@ -647,8 +649,8 @@ def ingest_ssurgo_regional_packages(
         "source_id": "ssurgo",
         "sizing_record": str(sizing_path),
         "approved_boundary": {
-            "geoids": sorted({"08013", "08069", "08123"}),
-            "vintage": 2025,
+            "geoids": sorted(NORTHERN_COLORADO_REGRESSION_FIXTURE.county_geoids),
+            "vintage": NORTHERN_COLORADO_REGRESSION_FIXTURE.vintage,
             "survey_area_count": len(specs_tuple),
         },
         "started_at": area_results[0]["run"]["started_at"] if area_results else None,

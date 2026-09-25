@@ -15,10 +15,11 @@ from shapely.ops import transform
 
 from .adapters import NLCD_CLASSES
 from .models import Coverage, Observation
+from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 
 NLCD_SOURCE_YEAR = 2025
 ANALYSIS_CRS = "EPSG:5070"
-MAX_CELLS = 16_000_000
+MAX_CELLS = NORTHERN_COLORADO_REGRESSION_FIXTURE.dep.max_cells
 
 
 @dataclass(frozen=True)

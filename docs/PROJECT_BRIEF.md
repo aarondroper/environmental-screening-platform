@@ -36,7 +36,7 @@ The application should feel like an internal environmental-consulting platform: 
 
 ## In-scope capabilities
 
-- One contained country or region, selected through source-feasibility research.
+- User-submitted project AOIs bounded by source/provider capability; Northern Colorado remains the known-good regression/demo geography for the initial source direction.
 - Approximately five real public/open environmental datasets.
 - Heterogeneous source ingestion, such as paginated REST or ArcGIS services, downloadable vector files, and raster assets where justified.
 - Raw source snapshots with acquisition metadata and checksums.
@@ -68,7 +68,7 @@ This project is not intended to become:
 
 ## Important constraints
 
-- Northern Colorado (Boulder, Larimer, and Weld counties) and the five-source MVP direction (FEMA NFHL, PAD-US, Annual NLCD, 3DEP, and SSURGO hydric-soil information) are owner-selected. Exact regional artifacts, representative data characteristics, final access behavior, and actual package scale remain to be validated before the source set is finalized. NWI is outside the MVP because release-specific redistribution terms could not be confirmed.
+- Northern Colorado (Boulder, Larimer, and Weld counties) remains the owner-selected regression/demo geography, and the five-source MVP direction (FEMA NFHL, PAD-US, Annual NLCD, 3DEP, and SSURGO hydric-soil information) remains owner-selected. The platform AOI contract accepts user-submitted geometries, subject to source-specific coverage and request limits. Exact regional artifacts, representative data characteristics, final access behavior, and actual package scale remain bounded by the validation record before the source set is finalized. NWI is outside the MVP because release-specific redistribution terms could not be confirmed.
 - Every public source must permit the intended acquisition, display, and redistribution behavior.
 - Screening results must be described as preliminary constraints, not final regulatory, planning, engineering, or environmental-impact conclusions.
 - SSURGO soil/hydric attributes must never be described as mapped wetlands, wetland presence/absence, or jurisdictional wetland determinations.
