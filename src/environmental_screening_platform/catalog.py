@@ -1036,7 +1036,25 @@ class SQLiteSourceRepository:
                 ).fetchone()
                 previous_version_id = current["version_id"] if current else None
                 rejection: str | None = None
-                if (
+                regional_coverage = candidate["validation"].get("regional_coverage_validation")
+                preserve_inactive_disposition = (
+                    candidate["source_id"] == "ssurgo"
+                    and regional_coverage is not None
+                    and candidate["promotion_status"] == "not_promoted"
+                )
+                if preserve_inactive_disposition:
+                    coverage = regional_coverage.get("coverage", {})
+                    rejection = (
+                        "SSURGO regional candidate rejected for promotion: "
+                        f"{float(coverage.get('uncovered_area_sqm', 0.0)):.1f} m² "
+                        "uncovered residual across "
+                        f"{int(coverage.get('gap_geometry_component_count', coverage.get('gap_component_count', 0)))} "
+                        "gap components, including "
+                        f"{int(coverage.get('interior_gap_count', 0))} interior residuals; "
+                        f"{float(coverage.get('overlap_area_sqm', 0.0)):.1f} m² of cross-package overlap. "
+                        "Residual areas remain unknown; no fill, repair, clipping, or promotion is permitted."
+                    )
+                elif (
                     candidate["status"] != "validated"
                     or candidate["validation_status"] != "validated"
                 ):
@@ -1096,10 +1114,11 @@ class SQLiteSourceRepository:
                     ),
                 )
                 if rejection:
-                    db.execute(
-                        "UPDATE candidates SET promotion_status='rejected' WHERE candidate_id=?",
-                        (candidate_id,),
-                    )
+                    if not preserve_inactive_disposition:
+                        db.execute(
+                            "UPDATE candidates SET promotion_status='rejected' WHERE candidate_id=?",
+                            (candidate_id,),
+                        )
                 else:
                     if previous_version_id and not already_active:
                         db.execute(

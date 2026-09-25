@@ -133,6 +133,8 @@ The inactive staged candidate can be measured without changing raw or staged dat
 
 This read-only analysis records EPSG:5070 AOI/coverage, uncovered residuals, outside-AOI source area, per-survey-area contribution, package overlaps, and gap/seam diagnostic GeoJSON under the external data directory and links the aggregate checksum to the inactive candidate. It does not clip, dissolve, repair, deduplicate, promote, or consume the staged data for screening. Nonzero uncovered area remains unknown, not absence of a constraint; inspect the external report and manifest before any separate promotion decision.
 
+An explicit `promote-candidate` attempt for this regional candidate is rejected with the measured SSURGO coverage reason and leaves the candidate `not_promoted`; the coverage reports and unknown-area state remain preserved.
+
 The exports are a JSON source/result record, CSV with one row per source and provenance/state, and GeoJSON with the AOI plus valid SSURGO map-unit polygons produced by that run. NLCD is summarized in JSON/CSV and does not create pixel geometries; 3DEP may add one meaningful raster-footprint feature. Hydric ratings remain component-level soil data, not a wetlands inventory or regulatory wetland determination. The result is preliminary; missing or incomplete data are not treated as no constraint, and no composite score is calculated.
 
 ## Current limits

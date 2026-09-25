@@ -86,6 +86,10 @@ All 19 survey areas contributed intersecting records. Per-package reports retain
 
 Aggregate, per-package, gap, overlap, and seam reports are outside Git under `/home/aarondroper/projects/environmental-screening-platform-data/ssurgo/regional-coverage/9d77a86a-bdc7-4684-b977-1081f8ed484c/`; their paths, sizes, and SHA-256 checksums are recorded in the external `manifest.json`. Repeating the analysis is read-only and deterministic at the report-contract level. This is coverage evidence for the inactive staged candidate, not final source approval, active promotion, or permission to treat missing soil coverage as absence of a constraint.
 
+### SSURGO regional candidate disposition — promotion rejected
+
+On 2026-09-25, an explicit promotion attempt for candidate `9d77a86a-bdc7-4684-b977-1081f8ed484c` was recorded as **rejected** with the source-specific reason: **842.5 m² uncovered residual across 43 gap components, including 30 interior residuals; 160.7 m² of cross-package overlap. Residual areas remain unknown; no fill, repair, clipping, or promotion is permitted.** The decision is idempotent. The candidate remains `incomplete` / `conditionally_validated` / `partial` / `incomplete_source` / `not_promoted`; the active SSURGO pointer remains absent. The rejection preserves the regional coverage validation, all diagnostic report paths/checksums, package lineage, raw checksums, and provenance. This disposition does not alter FEMA, PAD-US, NLCD, 3DEP, or screening behavior.
+
 ### PAD-US audited staging repair — policy approved; sample partially accepted
 
 The owner approved deterministic repair only in a derived staging artifact. Raw sample bytes and source features remain unchanged. Invalid geometries were processed with Shapely 2.1.2 / GEOS 3.13.1 `make_valid`; area comparisons use NAD83 / Conus Albers equal-area (EPSG:5070). Source properties were compared value-for-value and are identical in derived accepted/quarantine features. No feature was silently dropped: all five raw OBJECTIDs occur exactly once across those outputs and in the QA report. Valid source geometries were retained without repair.

@@ -163,6 +163,14 @@ The read-only parsing/QA, discrepancy-audit, owner-approved derived staging, and
 
 **Next frontier:** Review the measured coverage evidence and decide whether the residual gaps/overlaps are acceptable for a later canonical promotion design; do not consume this inactive candidate in the fixture-only screening path without a separate decision.
 
+## Milestone 2B.13 — Regional SSURGO candidate disposition
+
+**Status:** Implemented and runtime-verified on 2026-09-25. The explicit promotion attempt for candidate `9d77a86a-bdc7-4684-b977-1081f8ed484c` was rejected with an idempotent SQLite promotion decision.
+
+**Reason:** 842.5 m² uncovered residual across 43 gap components, including 30 interior residuals; 160.7 m² of cross-package overlap. Residual areas remain unknown; no fill, repair, clipping, redownload, scope expansion, or promotion was performed.
+
+**Safety state:** The candidate remains `incomplete` / `conditionally_validated` / `partial` / `incomplete_source` / `not_promoted`; all coverage metrics, diagnostic geometries, report checksums, package lineage, raw checksums, and provenance remain preserved. The active SSURGO pointer remains absent. FEMA, PAD-US, NLCD, 3DEP, and screening semantics are unchanged.
+
 ## Milestone 3 — Repository foundation and local platform
 
 **Priority:** P0

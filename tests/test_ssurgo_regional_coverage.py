@@ -91,3 +91,48 @@ def test_coverage_validation_persists_without_active_promotion(tmp_path: Path) -
     assert updated["status"] == "incomplete"
     assert updated["promotion_status"] == "not_promoted"
     assert repository.get_active("ssurgo") is None
+
+
+def test_regional_ssurgo_promotion_is_rejected_with_unknown_state_preserved(
+    tmp_path: Path,
+) -> None:
+    _make_fixture(tmp_path)
+    materialized = materialize_staged_ssurgo_candidate(tmp_path)
+    repository = SQLiteSourceRepository(tmp_path)
+    validation = {
+        "analysis_version": "ssurgo-regional-coverage-v1",
+        "aggregate_report": str(tmp_path / "coverage.json"),
+        "aggregate_report_sha256": "b" * 64,
+        "coverage": {
+            "uncovered_area_sqm": 842.5,
+            "gap_geometry_component_count": 43,
+            "interior_gap_count": 30,
+            "overlap_area_sqm": 160.7,
+        },
+        "diagnostics": {"gap": {"sha256": "c" * 64}},
+    }
+    repository.record_coverage_validation(
+        materialized["candidate"]["candidate_id"],
+        coverage_status="partial",
+        observation_status="incomplete_source",
+        validation=validation,
+    )
+
+    decision = repository.promote(materialized["candidate"]["candidate_id"])
+    repeated = repository.promote(materialized["candidate"]["candidate_id"])
+    stored = repository.get_candidate(materialized["candidate"]["candidate_id"])
+
+    assert decision["decision"] == "rejected"
+    assert "SSURGO regional candidate rejected for promotion" in decision["reason"]
+    assert "842.5 m²" in decision["reason"]
+    assert "43 gap components" in decision["reason"]
+    assert "30 interior residuals" in decision["reason"]
+    assert "160.7 m² of cross-package overlap" in decision["reason"]
+    assert repeated["idempotent"] is True
+    assert repeated["decision_id"] == decision["decision_id"]
+    assert stored is not None
+    assert stored["promotion_status"] == "not_promoted"
+    assert stored["coverage_status"] == "partial"
+    assert stored["observation_status"] == "incomplete_source"
+    assert stored["validation"]["regional_coverage_validation"] == validation
+    assert repository.get_active("ssurgo") is None
