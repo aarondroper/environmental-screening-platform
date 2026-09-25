@@ -88,6 +88,14 @@ Source ingestion is separately available as a candidate-first operator workflow.
 .venv/bin/screening --data-dir "$DATA_DIR" active-version --source annual_nlcd
 ```
 
+The approved three-county Annual NLCD 2025 regional acquisition is a separate validation-only workflow:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" ingest-nlcd-regional
+```
+
+It requests only the exact Boulder/Larimer/Weld window from the official USGS/MRLC WCS in EPSG:5070 at nominal 30 m resolution, records the provider-snapped transform, dimensions, nodata, observed class domain, AOI/outside-AOI accounting, HTTP metadata, retrieval timestamp, byte size and checksum, and creates an inactive candidate. It does not download a national bundle, create an active version, add NLCD pixels to PostGIS, or interpret land-cover classes as constraints. The measured regional response is a padded rectangle, so outside-AOI pixels and nodata remain explicit unknown/non-observation states.
+
 `ingest` creates an inactive candidate; promotion is a separate explicit step. `retry-ingestion --run-id RUN_ID` creates a new linked run and preserves the prior attempt. Candidate metadata, acquisition attempts, validations, decisions, the active-version pointer, and immutable job source snapshots are stored transactionally in a local SQLite catalog under the external data directory. Artifacts are rehashed at registration, promotion, and job snapshot/use boundaries. PAD-US remains quarantined/conditional and FEMA remains blocked; neither is acquired or promotable. This catalog is a local metadata/control store only; the separate optional PostGIS repository contains the representative SSURGO fixture under explicit snapshot/version linkage and does not activate it for regional screening.
 
 The acquired regional SSURGO candidates can be checked without downloading or modifying them:

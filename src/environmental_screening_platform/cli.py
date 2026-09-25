@@ -12,6 +12,7 @@ from typing import Any
 from .catalog import SQLiteSourceRepository
 from .ingestion import (
     REQUEST_URLS,
+    ingest_nlcd_regional,
     ingest_source,
     ingest_ssurgo_regional_packages,
     retry_ingestion,
@@ -127,6 +128,12 @@ def _parser() -> argparse.ArgumentParser:
         help="Acquire all official regional SSURGO packages as inactive validation candidates",
     )
     regional_ingest.add_argument("--sizing-record", type=Path)
+
+    nlcd_regional_ingest = sub.add_parser(
+        "ingest-nlcd-regional",
+        help="Acquire the approved three-county Annual NLCD 2025 WCS window as an inactive candidate",
+    )
+    nlcd_regional_ingest.add_argument("--boundary", type=Path)
 
     regional_validate = sub.add_parser(
         "validate-ssurgo-regional",
@@ -306,6 +313,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.data_dir,
             sizing_record=args.sizing_record,
         )
+    elif args.command == "ingest-nlcd-regional":
+        outcome = ingest_nlcd_regional(args.data_dir, boundary_path=args.boundary)
     elif args.command == "validate-ssurgo-regional":
         outcome = validate_ssurgo_regional_packages(
             args.data_dir,

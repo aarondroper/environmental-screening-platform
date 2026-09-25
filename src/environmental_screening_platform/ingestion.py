@@ -18,6 +18,7 @@ from .adapters import (
     acquire_3dep,
     acquire_boundary,
     acquire_nlcd,
+    acquire_nlcd_regional,
     acquire_ssurgo,
 )
 from .catalog import SourceRepository, SQLiteSourceRepository
@@ -108,6 +109,8 @@ def ingest_source(
     acquirer: Acquirer | None = None,
     requested_url: str | None = None,
     allow_missing_aoi: bool = False,
+    aoi_override: Any | None = None,
+    aoi_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if source_id not in REQUEST_URLS:
         raise ValueError(f"Unknown selected source: {source_id}")
@@ -115,7 +118,15 @@ def ingest_source(
         SourceRepository,
         repository if repository is not None else SQLiteSourceRepository(data_root),
     )
-    aoi, revision = _aoi_context(data_root.resolve(), project_id, aoi_id)
+    aoi: Any
+    revision: dict[str, Any] | None
+    if aoi_override is not None:
+        aoi = aoi_override
+        revision = dict(aoi_metadata or {})
+        revision.setdefault("aoi_id", "northern-colorado-front-range")
+        revision.setdefault("revision", 1)
+    else:
+        aoi, revision = _aoi_context(data_root.resolve(), project_id, aoi_id)
     if (
         source_id != "census_boundary"
         and source_id in OPERATIONAL_SOURCES
@@ -272,6 +283,170 @@ def ingest_source(
             error=result["reason"],
         )
     return {"run": repository.get_run(run["run_id"]), "candidate": candidate}
+
+
+def _update_nlcd_regional_manifest(
+    data_root: Path, outcome: dict[str, Any], *, boundary_path: Path
+) -> Path:
+    """Record the regional acquisition in the external manifest only."""
+    manifest_path = data_root / "manifest.json"
+    manifest: dict[str, Any] = (
+        read_json(manifest_path)
+        if manifest_path.exists()
+        else {
+            "manifest_version": 1,
+            "retrieved_on": datetime.now(UTC).date().isoformat(),
+            "scope": "External source artifacts and validation records",
+            "artifacts": [],
+            "failed_attempts": [],
+        }
+    )
+    candidate = outcome.get("candidate") or {}
+    validation = candidate.get("validation") or {}
+    provenance = validation.get("source_provenance") or {}
+    attempts = candidate.get("acquisition_attempts") or []
+    attempt = attempts[-1] if attempts else {}
+    details = attempt.get("details") or {}
+    request_parameters = provenance.get("request_parameters") or details.get(
+        "request_parameters", {}
+    )
+    artifact = {
+        "source": "Annual NLCD Collection 1.2, 2025 land cover regional acquisition",
+        "url": provenance.get("requested_url")
+        or details.get("requested_url")
+        or REQUEST_URLS["annual_nlcd"],
+        "final_url": provenance.get("source_url") or candidate.get("source_url"),
+        "release_version": candidate.get("provider_release"),
+        "retrieval_date": provenance.get("acquired_at") or candidate.get("retrieved_at"),
+        "local_path": candidate.get("artifact_path"),
+        "file_size_bytes": candidate.get("byte_size"),
+        "provider_reported_size_bytes": provenance.get("provider_reported_size_bytes")
+        or details.get("provider_reported_size_bytes"),
+        "sha256": candidate.get("sha256"),
+        "license_terms_url": provenance.get("terms_url") or candidate.get("terms_url"),
+        "validation_status": candidate.get("status"),
+        "source_maturity": "validated (representative-sample scope unchanged)",
+        "candidate_status": candidate.get("status"),
+        "promotion_status": candidate.get("promotion_status"),
+        "run_id": candidate.get("run_id"),
+        "candidate_id": candidate.get("candidate_id"),
+        "source_version_id": candidate.get("version_id"),
+        "aoi": {
+            "boundary_path": str(boundary_path),
+            "geoids": ["08013", "08069", "08123"],
+            "vintage": 2025,
+            "aoi_id": "northern-colorado-front-range",
+            "revision": 1,
+        },
+        "request_parameters": request_parameters,
+        "http_status": provenance.get("http_status") or details.get("http_status"),
+        "http_headers": provenance.get("response_headers") or details.get("response_headers", {}),
+        "raster_validation": validation.get("metrics", {}),
+        "notes": (
+            "Official automated WCS regional window. Raw raster remains outside Git. "
+            "Candidate is inactive and validation-only; no active NLCD version was created."
+        ),
+    }
+    artifacts: list[dict[str, Any]] = manifest.setdefault("artifacts", [])
+    if candidate.get("status") != "failed":
+        existing = next(
+            (
+                index
+                for index, current in enumerate(artifacts)
+                if (
+                    artifact["source_version_id"]
+                    and current.get("source_version_id") == artifact["source_version_id"]
+                )
+                or (artifact["local_path"] and current.get("local_path") == artifact["local_path"])
+            ),
+            None,
+        )
+        if existing is None:
+            artifacts.append(artifact)
+        else:
+            artifacts[existing] = artifact
+    else:
+        failures: list[dict[str, Any]] = manifest.setdefault("failed_attempts", [])
+        failure = {
+            "source": artifact["source"],
+            "attempt_date": attempt.get("attempted_at"),
+            "official_url": artifact["url"],
+            "final_url": artifact["final_url"],
+            "run_id": artifact["run_id"],
+            "candidate_id": artifact["candidate_id"],
+            "artifact_path": artifact["local_path"],
+            "sha256": artifact["sha256"],
+            "byte_size": artifact["file_size_bytes"],
+            "provider_reported_size_bytes": artifact["provider_reported_size_bytes"],
+            "http_status": artifact["http_status"],
+            "response_headers": artifact["http_headers"],
+            "request_parameters": artifact["request_parameters"],
+            "result": (candidate.get("error") or {}).get("message"),
+            "classification": "Regional raster acquired but validation failed; inactive candidate retained.",
+        }
+        existing_failure = next(
+            (
+                index
+                for index, current in enumerate(failures)
+                if current.get("candidate_id") == failure["candidate_id"]
+            ),
+            None,
+        )
+        if existing_failure is None:
+            failures.append(failure)
+        else:
+            failures[existing_failure] = failure
+    manifest["retrieved_on"] = datetime.now(UTC).date().isoformat()
+    write_json(manifest_path, manifest)
+    return manifest_path
+
+
+def ingest_nlcd_regional(
+    data_root: Path,
+    *,
+    repository: SourceRepository | None = None,
+    session: Any | None = None,
+    boundary_path: Path | None = None,
+) -> dict[str, Any]:
+    """Acquire the approved three-county NLCD window as an inactive candidate."""
+    from .ssurgo_regional import load_approved_aoi
+
+    repository = cast(
+        SourceRepository,
+        repository if repository is not None else SQLiteSourceRepository(data_root),
+    )
+    boundary = boundary_path or data_root / "geography" / "canonical" / "counties_2025.shp"
+    aoi = load_approved_aoi(data_root, boundary)
+    http_session = session or requests.Session()
+
+    def acquire(
+        _source_id: str,
+        root: Path,
+        _aoi: Any,
+        callback: Callable[[Acquisition], None],
+    ) -> ProviderData:
+        return acquire_nlcd_regional(http_session, root, aoi, acquisition_callback=callback)
+
+    outcome = ingest_source(
+        "annual_nlcd",
+        data_root,
+        repository=repository,
+        acquirer=acquire,
+        requested_url=REQUEST_URLS["annual_nlcd"],
+        aoi_override=aoi,
+        aoi_metadata={
+            "aoi_id": "northern-colorado-front-range",
+            "revision": 1,
+            "project_id": None,
+            "geometry_source": str(boundary),
+            "geoids": ["08013", "08069", "08123"],
+            "vintage": 2025,
+        },
+    )
+    outcome["manifest_path"] = str(
+        _update_nlcd_regional_manifest(data_root, outcome, boundary_path=boundary)
+    )
+    return outcome
 
 
 def retry_ingestion(

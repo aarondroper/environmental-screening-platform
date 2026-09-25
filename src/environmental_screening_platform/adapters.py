@@ -32,6 +32,13 @@ from .store import fetch_raw
 CENSUS_URL = "https://www2.census.gov/geo/tiger/TIGER2025/COUNTY/tl_2025_us_county.zip"
 NLCD_WCS = "https://dmsdata.cr.usgs.gov/geoserver/wcs"
 NLCD_COVERAGE = "mrlc_Land-Cover_conus_year_data:Land-Cover_conus_year_data"
+NLCD_REGIONAL_CRS = "EPSG:5070"
+NLCD_REGIONAL_RESOLUTION_M = 30.0
+NLCD_REGIONAL_NODATA = 250
+# The exact three-county bounding rectangle includes two detached components;
+# its measured provider-snapped window is about 45.7 million cells.
+NLCD_REGIONAL_MAX_CELLS = 50_000_000
+NLCD_RELEASE = "Annual NLCD Collection 1.2, 2025 land cover"
 NLCD_CLASSES = {
     11: "open_water",
     12: "perennial_ice_snow",
@@ -291,6 +298,187 @@ def acquire_nlcd(
                 "NLCD wetland-themed classes are land-cover classifications, not wetland determinations.",
             ],
             reason="Nodata cells inside requested AOI window" if has_nodata else None,
+        ),
+        value=profile,
+    )
+
+
+def _nlcd_regional_request(aoi_4326: Any) -> dict[str, Any]:
+    """Build the bounded native-product request for the approved regional window."""
+    to_product = Transformer.from_crs("EPSG:4326", NLCD_REGIONAL_CRS, always_xy=True).transform
+    aoi_product = transform(to_product, aoi_4326)
+    minx, miny, maxx, maxy = aoi_product.bounds
+    return {
+        "service": "WCS",
+        "version": "1.0.0",
+        "request": "GetCoverage",
+        "coverage": NLCD_COVERAGE,
+        "time": "2025-01-01T00:00:00.000Z",
+        "crs": NLCD_REGIONAL_CRS,
+        "bbox": f"{minx},{miny},{maxx},{maxy}",
+        "resx": NLCD_REGIONAL_RESOLUTION_M,
+        "resy": NLCD_REGIONAL_RESOLUTION_M,
+        "format": "image/geotiff",
+    }
+
+
+def _validate_nlcd_regional_raster(body: bytes, aoi_4326: Any) -> dict[str, Any]:
+    """Validate a provider-returned regional NLCD raster without resampling it."""
+    to_product = Transformer.from_crs("EPSG:4326", NLCD_REGIONAL_CRS, always_xy=True).transform
+    aoi_product = transform(to_product, aoi_4326)
+    with MemoryFile(body) as mem, mem.open() as dataset:
+        if dataset.count != 1:
+            raise ValueError("Regional NLCD response must contain exactly one categorical band")
+        if dataset.width * dataset.height > NLCD_REGIONAL_MAX_CELLS:
+            raise ValueError("Regional NLCD response exceeds the bounded cell limit")
+        if dataset.crs is None or dataset.crs.to_epsg() != 5070:
+            raise ValueError("Regional NLCD response CRS is not the native EPSG:5070 product CRS")
+        if dataset.dtypes[0] != "uint8":
+            raise ValueError(f"Regional NLCD response must be uint8, got {dataset.dtypes[0]}")
+        x_resolution, y_resolution = dataset.res
+        if not (29.0 <= x_resolution <= 31.0 and 29.0 <= y_resolution <= 31.0):
+            raise ValueError(
+                "Regional NLCD response is not the nominal 30 m product grid: "
+                f"{x_resolution} x {y_resolution} m"
+            )
+        if (
+            abs(x_resolution - y_resolution) > 0.01
+            or dataset.transform.b != 0
+            or dataset.transform.d != 0
+        ):
+            raise ValueError("Regional NLCD response is not a regular square aligned raster grid")
+        if dataset.nodata is None or int(dataset.nodata) != NLCD_REGIONAL_NODATA:
+            raise ValueError(
+                f"Regional NLCD nodata must be {NLCD_REGIONAL_NODATA}, got {dataset.nodata}"
+            )
+        values = dataset.read(1)
+        inside = geometry_mask(
+            [mapping(aoi_product)],
+            out_shape=values.shape,
+            transform=dataset.transform,
+            invert=True,
+            all_touched=True,
+        )
+        nodata_mask = values == NLCD_REGIONAL_NODATA
+        observed_values = values[inside & ~nodata_mask]
+        invalid = sorted(
+            {int(value) for value in observed_values if int(value) not in NLCD_CLASSES}
+        )
+        if invalid:
+            raise ValueError(
+                f"Regional NLCD contains values outside the official class domain: {invalid}"
+            )
+        footprint = Polygon.from_bounds(*dataset.bounds)
+        covered_area = aoi_product.intersection(footprint).area
+        aoi_area = aoi_product.area
+        uncovered_area = max(0.0, aoi_area - covered_area)
+        valid_inside = inside & ~nodata_mask
+        nodata_inside = inside & nodata_mask
+        classes, counts = np.unique(values[valid_inside], return_counts=True)
+        class_metrics = {
+            str(int(code)): {
+                "class_name": NLCD_CLASSES[int(code)],
+                "pixel_count": int(count),
+                "percentage_of_valid_covered_pixels": round(
+                    float(count / valid_inside.sum() * 100), 6
+                )
+                if valid_inside.any()
+                else None,
+            }
+            for code, count in zip(classes, counts, strict=True)
+        }
+        profile = {
+            "crs": dataset.crs.to_string(),
+            "width": dataset.width,
+            "height": dataset.height,
+            "dtype": dataset.dtypes[0],
+            "transform": list(dataset.transform)[:6],
+            "bounds": [float(value) for value in dataset.bounds],
+            "resolution_m": [float(x_resolution), float(y_resolution)],
+            "nominal_resolution_m": NLCD_REGIONAL_RESOLUTION_M,
+            "nodata": int(dataset.nodata),
+            "source_year": 2025,
+            "coverage": {
+                "aoi_area_sqkm": round(aoi_area / 1_000_000, 6),
+                "raster_footprint_sqkm": round(footprint.area / 1_000_000, 6),
+                "covered_aoi_area_sqkm": round(covered_area / 1_000_000, 6),
+                "uncovered_aoi_area_sqkm": round(uncovered_area / 1_000_000, 6),
+                "covered_aoi_percentage": round(covered_area / aoi_area * 100, 6)
+                if aoi_area
+                else None,
+                "uncovered_aoi_percentage": round(uncovered_area / aoi_area * 100, 6)
+                if aoi_area
+                else None,
+            },
+            "pixel_accounting": {
+                "raster_pixel_count": int(values.size),
+                "outside_aoi_pixel_count": int((~inside).sum()),
+                "covered_aoi_pixel_count": int(inside.sum()),
+                "valid_pixel_count": int(valid_inside.sum()),
+                "nodata_pixel_count": int(nodata_inside.sum()),
+            },
+            "classes": class_metrics,
+            "observed_class_values": [int(code) for code in classes],
+            "grid_alignment": "Provider-snapped EPSG:5070 square grid; no client resampling",
+        }
+    if not observed_values.size:
+        raise ValueError("Regional NLCD response contains no valid pixels inside the approved AOI")
+    return profile
+
+
+def acquire_nlcd_regional(
+    session: Any,
+    data_root: Path,
+    aoi_4326: Any,
+    *,
+    acquisition_callback: Callable[[Acquisition], None] | None = None,
+) -> ProviderData:
+    """Acquire the exact approved regional 2025 NLCD window as an inactive candidate."""
+    params = _nlcd_regional_request(aoi_4326)
+    body, meta = fetch_raw(
+        session,
+        source_id="annual_nlcd",
+        provider="USGS EROS / MRLC Annual NLCD WCS",
+        release=NLCD_RELEASE,
+        url=NLCD_WCS,
+        params=params,
+        data_root=data_root,
+        terms_url=TERMS["annual_nlcd"],
+        max_bytes=256_000_000,
+        media_type="image/tiff",
+        acquisition_callback=acquisition_callback,
+    )
+    if not meta.media_type.lower().startswith("image/tiff"):
+        raise ValueError(f"Regional NLCD WCS returned {meta.media_type}, not a GeoTIFF")
+    profile = _validate_nlcd_regional_raster(body, aoi_4326)
+    has_nodata = profile["pixel_accounting"]["nodata_pixel_count"] > 0
+    has_uncovered = profile["coverage"]["uncovered_aoi_area_sqkm"] > 0
+    return ProviderData(
+        SourceResult(
+            source_id="annual_nlcd",
+            validation_status=Maturity.VALIDATED,
+            validation_scope=(
+                "Automated official WCS regional window for the exact 2025 "
+                "Boulder/Larimer/Weld AOI; inactive validation-only candidate"
+            ),
+            coverage_status=Coverage.PARTIAL if has_uncovered else Coverage.COMPLETE,
+            observation_status=Observation.INCOMPLETE_SOURCE
+            if has_nodata or has_uncovered
+            else Observation.DATA_OBSERVED,
+            product_status=NLCD_RELEASE,
+            attempt_status=AttemptStatus.VALIDATED,
+            metrics=profile,
+            provenance=_acquisition(meta),
+            warnings=[
+                "The returned raster is a bounded regional window, not a national archive or full historical bundle.",
+                "Outside-AOI pixels and nodata are retained as accounting states, never as no constraint observed.",
+                "NLCD values are land-cover classifications, not wetlands, regulatory, or suitability determinations.",
+            ],
+            reason=(
+                "Regional raster contains nodata or uncovered AOI area; those locations remain unknown."
+                if has_nodata or has_uncovered
+                else None
+            ),
         ),
         value=profile,
     )
