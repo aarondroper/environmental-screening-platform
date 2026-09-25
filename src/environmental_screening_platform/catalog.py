@@ -103,6 +103,29 @@ class SourceRepository(Protocol):
 
     def get_job_snapshots(self, job_id: str) -> list[dict[str, Any]]: ...
 
+    def create_aoi_ingestion_run(
+        self,
+        *,
+        parent_run_id: str,
+        project_id: str,
+        aoi_id: str,
+        aoi_revision: int,
+        aoi_geometry_sha256: str,
+        source_ids: list[str],
+        limits: dict[str, Any],
+        plan_id: str,
+        plan_path: str,
+        status: str,
+        summary: dict[str, Any],
+        retry_of: str | None = None,
+    ) -> dict[str, Any]: ...
+
+    def update_aoi_ingestion_run(
+        self, parent_run_id: str, *, status: str, summary: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+    def get_aoi_ingestion_run(self, parent_run_id: str) -> dict[str, Any] | None: ...
+
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
@@ -271,8 +294,108 @@ class SQLiteSourceRepository:
                     ON ingestion_runs(source_id, started_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_candidate_source_status
                     ON candidates(source_id, status, created_at DESC);
+                CREATE TABLE IF NOT EXISTS aoi_ingestion_runs (
+                    parent_run_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    aoi_id TEXT NOT NULL,
+                    aoi_revision INTEGER NOT NULL,
+                    aoi_geometry_sha256 TEXT NOT NULL CHECK(length(aoi_geometry_sha256)=64),
+                    source_ids_json TEXT NOT NULL,
+                    limits_json TEXT NOT NULL,
+                    plan_id TEXT NOT NULL,
+                    plan_path TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN
+                        ('planned','running','completed','partial','failed','dry_run')),
+                    retry_of TEXT REFERENCES aoi_ingestion_runs(parent_run_id),
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    summary_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_aoi_ingestion_runs_time
+                    ON aoi_ingestion_runs(started_at DESC);
                 """
             )
+
+    def create_aoi_ingestion_run(
+        self,
+        *,
+        parent_run_id: str,
+        project_id: str,
+        aoi_id: str,
+        aoi_revision: int,
+        aoi_geometry_sha256: str,
+        source_ids: list[str],
+        limits: dict[str, Any],
+        plan_id: str,
+        plan_path: str,
+        status: str,
+        summary: dict[str, Any],
+        retry_of: str | None = None,
+    ) -> dict[str, Any]:
+        if status not in {"planned", "running", "dry_run"}:
+            raise ValueError("New AOI ingestion runs must be planned, running, or dry_run")
+        with self._transaction() as db:
+            db.execute(
+                """INSERT INTO aoi_ingestion_runs
+                (parent_run_id,project_id,aoi_id,aoi_revision,aoi_geometry_sha256,
+                 source_ids_json,limits_json,plan_id,plan_path,status,retry_of,started_at,summary_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    parent_run_id,
+                    project_id,
+                    aoi_id,
+                    aoi_revision,
+                    aoi_geometry_sha256,
+                    _json(source_ids),
+                    _json(limits),
+                    plan_id,
+                    plan_path,
+                    status,
+                    retry_of,
+                    utc_now(),
+                    _json(summary),
+                ),
+            )
+        return self.get_aoi_ingestion_run(parent_run_id) or {}
+
+    def update_aoi_ingestion_run(
+        self, parent_run_id: str, *, status: str, summary: dict[str, Any]
+    ) -> dict[str, Any]:
+        if status not in {"planned", "running", "completed", "partial", "failed", "dry_run"}:
+            raise ValueError(f"Invalid AOI ingestion run status: {status}")
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT status FROM aoi_ingestion_runs WHERE parent_run_id=?",
+                (parent_run_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown AOI ingestion run: {parent_run_id}")
+            db.execute(
+                """UPDATE aoi_ingestion_runs
+                   SET status=?, finished_at=?, summary_json=?
+                   WHERE parent_run_id=?""",
+                (
+                    status,
+                    utc_now() if status in {"completed", "partial", "failed", "dry_run"} else None,
+                    _json(summary),
+                    parent_run_id,
+                ),
+            )
+        return self.get_aoi_ingestion_run(parent_run_id) or {}
+
+    def get_aoi_ingestion_run(self, parent_run_id: str) -> dict[str, Any] | None:
+        with self._database() as db:
+            row = db.execute(
+                "SELECT * FROM aoi_ingestion_runs WHERE parent_run_id=?",
+                (parent_run_id,),
+            ).fetchone()
+        result = _decode(row)
+        if result is None:
+            return None
+        result["source_ids"] = json.loads(result.pop("source_ids_json"))
+        result["limits"] = json.loads(result.pop("limits_json"))
+        result["summary"] = json.loads(result.pop("summary_json"))
+        return result
 
     def begin_run(
         self,

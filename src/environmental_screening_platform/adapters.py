@@ -570,6 +570,7 @@ def acquire_nlcd_aoi(
     *,
     aoi_context: AoiContext | None = None,
     acquisition_callback: Callable[[Acquisition], None] | None = None,
+    max_bytes: int = 256_000_000,
 ) -> ProviderData:
     """Acquire one bounded Annual NLCD window for a persisted AOI revision."""
     params = _nlcd_aoi_request(aoi_4326)
@@ -582,7 +583,7 @@ def acquire_nlcd_aoi(
         params=params,
         data_root=data_root,
         terms_url=TERMS["annual_nlcd"],
-        max_bytes=256_000_000,
+        max_bytes=max_bytes,
         media_type="image/tiff",
         acquisition_callback=acquisition_callback,
     )

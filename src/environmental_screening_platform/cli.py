@@ -14,6 +14,7 @@ from .aoi import (
     NORTHERN_COLORADO_REGRESSION_POLICY,
     policy_by_id,
 )
+from .aoi_ingestion import ingest_aoi
 from .catalog import SQLiteSourceRepository
 from .ingestion import (
     REQUEST_URLS,
@@ -172,6 +173,38 @@ def _parser() -> argparse.ArgumentParser:
     ssurgo_ingest.add_argument("--max-survey-areas", type=int, default=16)
     ssurgo_ingest.add_argument("--max-total-bytes", type=int, default=500_000_000)
 
+    aoi_ingest = sub.add_parser(
+        "ingest-aoi",
+        help="Plan and independently acquire selected sources for one immutable AOI revision",
+    )
+    aoi_ingest.add_argument("--project-id", required=True)
+    aoi_ingest.add_argument("--aoi-id", required=True, help="Immutable AOI revision identifier")
+    aoi_ingest.add_argument(
+        "--sources",
+        nargs="+",
+        choices=("nlcd", "3dep", "ssurgo"),
+        required=True,
+        help="Selected generic source adapters",
+    )
+    aoi_ingest.add_argument(
+        "--max-source-bytes",
+        action="append",
+        default=[],
+        metavar="SOURCE=BYTES",
+        help="Override one source byte limit; repeat for multiple sources",
+    )
+    aoi_ingest.add_argument(
+        "--max-source-artifacts",
+        action="append",
+        default=[],
+        metavar="SOURCE=COUNT",
+        help="Override one source artifact/tile/package count limit",
+    )
+    aoi_ingest.add_argument("--max-total-bytes", type=int, default=1_000_000_000)
+    aoi_ingest.add_argument("--dry-run", action="store_true")
+    aoi_ingest.add_argument("--retry-parent-run-id")
+    aoi_ingest.add_argument("--retry-sources", nargs="+", choices=("nlcd", "3dep", "ssurgo"))
+
     regional_validate = sub.add_parser(
         "validate-ssurgo-regional",
         help="Validate all acquired regional SSURGO packages without promotion",
@@ -265,6 +298,27 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     outcome: Any
+
+    def parse_source_limits(
+        byte_values: Sequence[str], artifact_values: Sequence[str]
+    ) -> dict[str, dict[str, int]]:
+        limits: dict[str, dict[str, int]] = {}
+        for raw, key in [
+            *((value, "max_bytes") for value in byte_values),
+            *((value, "max_artifacts") for value in artifact_values),
+        ]:
+            if "=" not in raw:
+                raise ValueError(f"Expected SOURCE=VALUE, got {raw!r}")
+            source, value = raw.split("=", 1)
+            if source not in {"nlcd", "3dep", "ssurgo"}:
+                raise ValueError(f"Unknown source limit key: {source}")
+            try:
+                parsed = int(value)
+            except ValueError as exc:
+                raise ValueError(f"Source limit must be an integer: {raw}") from exc
+            limits.setdefault(source, {})[key] = parsed
+        return limits
+
     if args.command == "project-create":
         outcome = create_project(
             args.name,
@@ -376,6 +430,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             aoi_id=args.aoi_id,
             max_survey_areas=args.max_survey_areas,
             max_total_bytes=args.max_total_bytes,
+        )
+    elif args.command == "ingest-aoi":
+        outcome = ingest_aoi(
+            args.data_dir,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+            sources=args.sources,
+            per_source_limits=parse_source_limits(args.max_source_bytes, args.max_source_artifacts),
+            max_total_bytes=args.max_total_bytes,
+            dry_run=args.dry_run,
+            retry_parent_run_id=args.retry_parent_run_id,
+            retry_sources=args.retry_sources,
         )
     elif args.command == "validate-ssurgo-regional":
         outcome = validate_ssurgo_regional_packages(

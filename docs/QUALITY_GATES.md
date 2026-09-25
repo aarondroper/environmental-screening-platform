@@ -35,6 +35,8 @@ For the inactive regional candidate, run `.venv/bin/screening --data-dir "$DATA_
 
 Keep inventorying tracked/visible files, inspecting `git status`, checking documentation links/paths, and distinguishing unavailable checks from passing checks as those systems are added. Do not invent commands for tools that are not configured.
 
+For the generic multi-source AOI ingestion slice, run `pytest tests/test_aoi_ingestion.py`, inspect `screening ingest-aoi --help`, and exercise a dry run with a persisted generic AOI. Confirm the external plan is written before any adapter call, its ID is deterministic for the same AOI/source/limit inputs, the parent catalog row carries the immutable geometry hash, and no raw artifact or child acquisition appears in dry-run mode. Mock independent source outcomes to verify success/partial/failure aggregation, checksum-error visibility, byte/artifact limits, retry history, and idempotence. If a live smoke is performed, retain raw artifacts outside Git and report provider access separately; do not infer source maturity or promotion from the parent status.
+
 ## Evidence and scope gate
 
 - Inspect the actual repository, git status, relevant code, tests, configuration, and executable behavior before changing or claiming anything.

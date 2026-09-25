@@ -19,6 +19,12 @@ The 2026-09-25 live generic-AOI smoke passed for both paths using a dedicated Wa
 
 **Limit:** This does not make NLCD, SSURGO, PAD-US, or FEMA generic production acquisition paths. Source-specific regional commands remain fixture-scoped, and larger-AOI tiling remains future work.
 
+## Milestone 2B.17 — Generic multi-source AOI ingestion orchestration
+
+**Status:** Implemented. The `ingest-aoi` command creates a durable parent plan/run around the existing generic NLCD, 3DEP, and SSURGO adapters. It supports deterministic preflight planning, independent bounded source execution, explicit failures/incomplete outcomes, dry runs, and idempotent retries of only failed/incomplete source attempts.
+
+**Remaining boundary:** No source promotion, FEMA/PAD-US acquisition, new tiling, screening change, UI/API, or production readiness is included. The next slice should be selected from the AOI-agnostic ETL backlog only after reviewing parent-run behavior against live generic acquisition and the existing inactive-candidate rules.
+
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite

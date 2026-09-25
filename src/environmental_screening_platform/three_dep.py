@@ -348,6 +348,7 @@ def acquire_3dep_tile(
     plan_id: str,
     inventory_parameters: dict[str, Any],
     acquisition_callback: Callable[[Acquisition], None] | None = None,
+    max_bytes: int = THREEDEP_MAX_TILE_BYTES,
 ) -> ProviderData:
     """Acquire and validate one planned official 3DEP tile."""
     release = f"USGS 3DEP 1/3 arc-second {tile.get('publication_date') or tile['title']}"
@@ -367,7 +368,7 @@ def acquire_3dep_tile(
         params=None,
         data_root=data_root,
         terms_url=TERMS["3dep"],
-        max_bytes=THREEDEP_MAX_TILE_BYTES,
+        max_bytes=max_bytes,
         media_type="image/tiff",
         recorded_request_parameters=recorded_parameters,
         acquisition_callback=acquisition_callback,

@@ -103,6 +103,19 @@ This queries the official NRCS SDA intersection function for the persisted AOI, 
 
 For the bounded multi-source fixture path:
 
+For one generic AOI acquisition plan spanning the existing NLCD, 3DEP, and SSURGO adapters, use:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" ingest-aoi \
+  --project-id PROJECT_ID --aoi-id AOI_ID \
+  --sources nlcd 3dep ssurgo \
+  --max-source-bytes nlcd=256000000 \
+  --max-source-artifacts 3dep=16 \
+  --max-total-bytes 1000000000
+```
+
+The command writes a deterministic plan before provider access, creates one parent SQLite control-plane run, and executes selected sources independently through the existing generic adapters. It records child attempts/candidates, measured bytes, checksums, validation/coverage outcomes, AOI geometry-hash lineage, warnings, and unknown coverage; all candidates remain inactive. Add `--dry-run` to persist planning metadata without network requests. A retry uses `--retry-parent-run-id` and optionally `--retry-sources` to rerun only failed/incomplete sources under the original immutable AOI plan. This orchestration does not acquire FEMA/PAD-US, promote sources, or change screening semantics.
+
 ```bash
 .venv/bin/screening --data-dir "$DATA_DIR" screen-fixtures \
   --project-id PROJECT_ID --database-url "$ESGP_POSTGIS_URL"

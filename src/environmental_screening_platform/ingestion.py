@@ -478,6 +478,7 @@ def ingest_nlcd_aoi(
     aoi_id: str | None = None,
     repository: SourceRepository | None = None,
     session: Any | None = None,
+    max_bytes: int = 256_000_000,
 ) -> dict[str, Any]:
     """Acquire Annual NLCD for the exact immutable AOI revision in a project."""
     resolved_root = data_root.resolve()
@@ -499,6 +500,7 @@ def ingest_nlcd_aoi(
             context.geometry,
             aoi_context=context,
             acquisition_callback=callback,
+            max_bytes=max_bytes,
         )
 
     outcome = ingest_source(
@@ -782,6 +784,9 @@ def ingest_3dep(
     aoi_id: str | None = None,
     repository: SourceRepository | None = None,
     session: Any | None = None,
+    max_tiles: int = 16,
+    max_total_bytes: int = 1_000_000_000,
+    max_tile_bytes: int = 600_000_000,
 ) -> dict[str, Any]:
     """Plan and acquire official 3DEP tiles for one immutable project AOI."""
     resolved_root = data_root.resolve()
@@ -794,7 +799,16 @@ def ingest_3dep(
         repository if repository is not None else SQLiteSourceRepository(resolved_root),
     )
     http_session = session or requests.Session()
-    plan = discover_3dep_tile_plan(http_session, context)
+    plan = discover_3dep_tile_plan(http_session, context, max_tiles=max_tiles)
+    reported_sizes = [
+        int(tile["provider_reported_size_bytes"])
+        for tile in plan["selected_tiles"]
+        if tile.get("provider_reported_size_bytes") is not None
+    ]
+    if any(size > max_tile_bytes for size in reported_sizes):
+        raise ValueError("3DEP tile exceeds the configured per-source tile byte limit")
+    if reported_sizes and sum(reported_sizes) > max_total_bytes:
+        raise ValueError("3DEP tile plan exceeds the configured total byte limit")
     plan_id = str(uuid4())
     plan["plan_id"] = plan_id
     plan_path = resolved_root / "3dep" / "tile-plans" / f"{plan_id}.json"
@@ -818,6 +832,7 @@ def ingest_3dep(
                 plan_id=plan_id,
                 inventory_parameters=plan["inventory_parameters"],
                 acquisition_callback=callback,
+                max_bytes=max_tile_bytes,
             )
 
         outcome = ingest_source(
