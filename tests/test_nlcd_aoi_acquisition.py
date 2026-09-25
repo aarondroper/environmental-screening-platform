@@ -14,6 +14,7 @@ from shapely.geometry import box
 from shapely.ops import transform
 
 from environmental_screening_platform.adapters import (
+    NLCD_AOI_MIN_WINDOW_M,
     NLCD_REGIONAL_CRS,
     _nlcd_aoi_request,
     _validate_nlcd_aoi_raster,
@@ -96,7 +97,7 @@ def _raster_bytes(*, nodata: int = 250) -> bytes:
         return memory.read()
 
 
-def test_generic_request_is_native_and_uses_transformed_aoi_bounds() -> None:
+def test_generic_request_is_native_and_uses_bounded_padded_aoi_bounds() -> None:
     request = _nlcd_aoi_request(_generic_aoi())
 
     assert request["crs"] == "EPSG:5070"
@@ -106,7 +107,12 @@ def test_generic_request_is_native_and_uses_transformed_aoi_bounds() -> None:
     projected = transform(
         Transformer.from_crs(4326, 5070, always_xy=True).transform, _generic_aoi()
     )
-    assert bbox == pytest.approx(projected.bounds)
+    assert bbox[0] < projected.bounds[0]
+    assert bbox[1] < projected.bounds[1]
+    assert bbox[2] > projected.bounds[2]
+    assert bbox[3] > projected.bounds[3]
+    assert bbox[2] - bbox[0] >= NLCD_AOI_MIN_WINDOW_M
+    assert bbox[3] - bbox[1] >= NLCD_AOI_MIN_WINDOW_M
 
 
 def test_generic_validation_preserves_outside_and_nodata_accounting() -> None:
@@ -159,6 +165,10 @@ def test_generic_ingestion_uses_persisted_revision_and_records_provenance(tmp_pa
     assert provenance["size_bytes"] == len(body)
     assert candidate["promotion_status"] == "not_promoted"
     assert SQLiteSourceRepository(data_root).get_active("annual_nlcd") is None
+    manifest = json.loads((data_root / "manifest.json").read_text(encoding="utf-8"))
+    assert any(
+        item.get("candidate_id") == candidate["candidate_id"] for item in manifest["artifacts"]
+    )
 
 
 def test_generic_adapter_attaches_aoi_context_provenance(tmp_path: Path) -> None:

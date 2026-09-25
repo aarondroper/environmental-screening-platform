@@ -499,7 +499,7 @@ def ingest_nlcd_aoi(
             acquisition_callback=callback,
         )
 
-    return ingest_source(
+    outcome = ingest_source(
         "annual_nlcd",
         resolved_root,
         project_id=project_id,
@@ -508,6 +508,124 @@ def ingest_nlcd_aoi(
         acquirer=acquire,
         requested_url=REQUEST_URLS["annual_nlcd"],
     )
+    outcome["manifest_path"] = str(
+        _update_nlcd_aoi_manifest(
+            resolved_root,
+            outcome,
+            aoi_geometry_sha256=context.geometry_sha256,
+        )
+    )
+    return outcome
+
+
+def _update_nlcd_aoi_manifest(
+    data_root: Path,
+    outcome: dict[str, Any],
+    *,
+    aoi_geometry_sha256: str | None = None,
+) -> Path:
+    """Record a generic AOI NLCD acquisition in the external manifest."""
+    manifest_path = data_root / "manifest.json"
+    manifest: dict[str, Any] = (
+        read_json(manifest_path)
+        if manifest_path.exists()
+        else {
+            "manifest_version": 1,
+            "retrieved_on": datetime.now(UTC).date().isoformat(),
+            "scope": "External source artifacts and validation records",
+            "artifacts": [],
+            "failed_attempts": [],
+        }
+    )
+    candidate = outcome.get("candidate") or {}
+    validation = candidate.get("validation") or {}
+    provenance = validation.get("source_provenance") or {}
+    attempts = candidate.get("acquisition_attempts") or []
+    attempt = attempts[-1] if attempts else {}
+    details = attempt.get("details") or {}
+    artifact = {
+        "source": "Annual NLCD Collection 1.2, 2025 land cover generic AOI acquisition",
+        "url": provenance.get("requested_url")
+        or details.get("requested_url")
+        or REQUEST_URLS["annual_nlcd"],
+        "final_url": provenance.get("source_url") or candidate.get("source_url"),
+        "release_version": candidate.get("provider_release"),
+        "retrieval_date": provenance.get("acquired_at") or candidate.get("retrieved_at"),
+        "local_path": candidate.get("artifact_path"),
+        "file_size_bytes": candidate.get("byte_size"),
+        "provider_reported_size_bytes": provenance.get("provider_reported_size_bytes")
+        or details.get("provider_reported_size_bytes"),
+        "sha256": candidate.get("sha256"),
+        "license_terms_url": provenance.get("terms_url") or candidate.get("terms_url"),
+        "validation_status": candidate.get("status"),
+        "source_maturity": "validated (generic AOI smoke scope; static maturity unchanged)",
+        "candidate_status": candidate.get("status"),
+        "promotion_status": candidate.get("promotion_status"),
+        "run_id": candidate.get("run_id"),
+        "candidate_id": candidate.get("candidate_id"),
+        "source_version_id": candidate.get("version_id"),
+        "project_id": outcome.get("run", {}).get("project_id"),
+        "aoi_id": outcome.get("run", {}).get("aoi_id"),
+        "aoi_revision": outcome.get("run", {}).get("aoi_revision"),
+        "aoi_geometry_sha256": provenance.get("aoi_geometry_sha256") or aoi_geometry_sha256,
+        "request_parameters": provenance.get("request_parameters")
+        or details.get("request_parameters", {}),
+        "http_status": provenance.get("http_status") or details.get("http_status"),
+        "http_headers": provenance.get("response_headers") or details.get("response_headers", {}),
+        "raster_validation": validation.get("metrics", {}),
+        "notes": (
+            "Generic persisted-AOI WCS acquisition; raw raster remains outside Git. "
+            "Candidate is inactive and validation-only; outside-AOI pixels and nodata "
+            "remain explicit non-observation/unknown states."
+        ),
+    }
+    artifacts: list[dict[str, Any]] = manifest.setdefault("artifacts", [])
+    existing = next(
+        (
+            index
+            for index, current in enumerate(artifacts)
+            if current.get("candidate_id") == artifact["candidate_id"]
+        ),
+        None,
+    )
+    if existing is None:
+        artifacts.append(artifact)
+    else:
+        artifacts[existing] = artifact
+    if candidate.get("error"):
+        failures: list[dict[str, Any]] = manifest.setdefault("failed_attempts", [])
+        failure = {
+            "source": artifact["source"],
+            "attempt_date": attempt.get("attempted_at"),
+            "official_url": artifact["url"],
+            "final_url": artifact["final_url"],
+            "run_id": artifact["run_id"],
+            "candidate_id": artifact["candidate_id"],
+            "artifact_path": artifact["local_path"],
+            "sha256": artifact["sha256"],
+            "byte_size": artifact["file_size_bytes"],
+            "provider_reported_size_bytes": artifact["provider_reported_size_bytes"],
+            "http_status": artifact["http_status"],
+            "response_headers": artifact["http_headers"],
+            "request_parameters": artifact["request_parameters"],
+            "result": (candidate.get("error") or {}).get("message"),
+            "classification": "Generic AOI NLCD acquisition or validation failure; inactive candidate retained.",
+        }
+        existing_failure = next(
+            (
+                index
+                for index, current in enumerate(failures)
+                if current.get("candidate_id") == failure["candidate_id"]
+            ),
+            None,
+        )
+        if existing_failure is None:
+            failures.append(failure)
+        else:
+            failures[existing_failure] = failure
+    manifest["retrieved_on"] = datetime.now(UTC).date().isoformat()
+    write_json(manifest_path, manifest)
+    return manifest_path
 
 
 def _update_3dep_manifest(

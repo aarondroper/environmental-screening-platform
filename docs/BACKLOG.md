@@ -13,6 +13,8 @@ Current status: Northern Colorado and the five-source MVP direction are owner-se
 
 The current AOI-agnostic implementation frontier also includes generic Annual NLCD acquisition and bounded 3DEP tile planning/acquisition; both remain inactive validation-only paths. Generic SSURGO acquisition, raster mosaicking, and arbitrary-AOI production coverage remain future work.
 
+The 2026-09-25 live generic-AOI smoke passed for both paths using a dedicated Washington, DC-area AOI. The NLCD path required and now records a bounded padded request for very small AOIs; the 3DEP path selected and validated one official native tile. Measured IDs, checksums, sizes, and limitations are recorded in `PROJECT_STATE.md` and the external manifest; no active source version was created.
+
 **Status:** Implemented. Generic projects accept valid nonempty WGS84 Polygon/MultiPolygon AOIs. Northern Colorado containment is available only through the explicit `northern_colorado_regression` policy. County IDs, boundary paths, SSURGO package expectations, raster expectations, and fixture metadata are centralized in `regression_fixtures.py` and remain regression configuration.
 
 **Limit:** This does not make NLCD, SSURGO, PAD-US, or FEMA generic production acquisition paths. Source-specific regional commands remain fixture-scoped, and larger-AOI tiling remains future work.

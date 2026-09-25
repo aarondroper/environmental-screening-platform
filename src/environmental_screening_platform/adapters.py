@@ -49,6 +49,10 @@ NLCD_REGIONAL_MAX_CELLS = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.max_cells
 # Generic AOI requests use the same bounded native grid contract, but this limit
 # is deliberately not derived from the Northern Colorado fixture geometry.
 NLCD_AOI_MAX_CELLS = 50_000_000
+# The WCS provider returns unstable sub-30 m transforms for very small
+# envelopes. A bounded padded window gives the provider enough native-grid
+# context while the validator still masks all outside-AOI pixels.
+NLCD_AOI_MIN_WINDOW_M = 20_000.0
 NLCD_RELEASE = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.release
 NLCD_CLASSES = {
     11: "open_water",
@@ -338,6 +342,16 @@ def _nlcd_aoi_request(aoi_4326: Any) -> dict[str, Any]:
     to_product = Transformer.from_crs("EPSG:4326", NLCD_NATIVE_CRS, always_xy=True).transform
     aoi_product = transform(to_product, aoi_4326)
     minx, miny, maxx, maxy = aoi_product.bounds
+    width_m = maxx - minx
+    height_m = maxy - miny
+    if width_m < NLCD_AOI_MIN_WINDOW_M:
+        padding = (NLCD_AOI_MIN_WINDOW_M - width_m) / 2
+        minx -= padding
+        maxx += padding
+    if height_m < NLCD_AOI_MIN_WINDOW_M:
+        padding = (NLCD_AOI_MIN_WINDOW_M - height_m) / 2
+        miny -= padding
+        maxy += padding
     width = max(1, int(np.ceil((maxx - minx) / NLCD_NATIVE_RESOLUTION_M)))
     height = max(1, int(np.ceil((maxy - miny) / NLCD_NATIVE_RESOLUTION_M)))
     estimated_cells = width * height
