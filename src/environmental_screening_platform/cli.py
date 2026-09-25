@@ -17,6 +17,7 @@ from .aoi import (
 from .catalog import SQLiteSourceRepository
 from .ingestion import (
     REQUEST_URLS,
+    ingest_nlcd_aoi,
     ingest_nlcd_regional,
     ingest_source,
     ingest_ssurgo_regional_packages,
@@ -145,6 +146,13 @@ def _parser() -> argparse.ArgumentParser:
         help="Acquire the approved three-county Annual NLCD 2025 WCS window as an inactive candidate",
     )
     nlcd_regional_ingest.add_argument("--boundary", type=Path)
+
+    nlcd_ingest = sub.add_parser(
+        "ingest-nlcd",
+        help="Acquire bounded Annual NLCD for a persisted project AOI",
+    )
+    nlcd_ingest.add_argument("--project-id", required=True)
+    nlcd_ingest.add_argument("--aoi-id")
 
     regional_validate = sub.add_parser(
         "validate-ssurgo-regional",
@@ -331,6 +339,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     elif args.command == "ingest-nlcd-regional":
         outcome = ingest_nlcd_regional(args.data_dir, boundary_path=args.boundary)
+    elif args.command == "ingest-nlcd":
+        outcome = ingest_nlcd_aoi(
+            args.data_dir,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+        )
     elif args.command == "validate-ssurgo-regional":
         outcome = validate_ssurgo_regional_packages(
             args.data_dir,

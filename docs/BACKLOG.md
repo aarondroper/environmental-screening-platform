@@ -142,6 +142,14 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Explicit limits:** The rectangular response includes 24,388,976 outside-AOI pixels; those are not screening observations. The source maturity remains representative-sample `validated`, the regional candidate remains `not_promoted`, and no active Annual NLCD version was created. No PostGIS pixel table, refresh scheduler, national archive, composite score, regulatory interpretation, or final Milestone 1 source approval is added.
 
+## Milestone 2B.14 — AOI-agnostic Annual NLCD acquisition
+
+**Status:** Implemented with deterministic local tests. The `ingest-nlcd` command consumes a persisted immutable AOI revision, builds the official WCS request from that geometry, and records AOI hashes, request parameters, native raster metadata, checksum, and inactive candidate provenance. `ingest-nlcd-regional` remains the Northern Colorado regression/fixture alias.
+
+**Verified scope:** Generic WGS84 Polygon/MultiPolygon AOIs outside Northern Colorado are accepted. The native EPSG:5070/30 m grid, nodata value 250, official class domain, AOI footprint accounting, outside-AOI pixels, and nodata/unknown semantics are validated. Oversized requests fail before HTTP with an explicit bounded-request error; no clipping or tiling was added.
+
+**Explicit limits:** Tests use a mocked provider response; no new generic-AOI live acquisition was performed. Candidates remain inactive and NLCD source maturity is unchanged. Generic SSURGO acquisition, source tiling, and arbitrary-AOI production coverage remain future work.
+
 ## Completed validation work — regional SSURGO package acquisition
 
 **Status:** Completed on 2026-09-24. The exact approved 2025 Census union returned 19 official NRCS SSURGO survey areas. Current `sacatalog` release metadata and grouped map-unit counts were confirmed, and all 19 official WSS survey-area ZIP bodies returned HTTP 200 with provider-reported compressed sizes totaling 394,959,419 bytes (376.663 MiB); measured local sizes matched, and all archives passed CRC/spatial/tabular container validation. The read-only parser then found 13 package passes and 6 package-level failures: 10 original invalid polygons in four packages and two survey-name variations. All 19 packages intersected the approved AOI. The sizing record, raw packages, and QA reports are outside Git under `/home/aarondroper/projects/environmental-screening-platform-data/ssurgo/`; candidates remain inactive/incomplete.

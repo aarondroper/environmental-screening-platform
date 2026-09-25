@@ -18,6 +18,7 @@ from rasterio.io import MemoryFile
 from shapely.geometry import Polygon, mapping, shape
 from shapely.ops import transform
 
+from .aoi import AoiContext
 from .models import (
     MATURITY,
     Acquisition,
@@ -33,12 +34,21 @@ from .store import fetch_raw
 CENSUS_URL = "https://www2.census.gov/geo/tiger/TIGER2025/COUNTY/tl_2025_us_county.zip"
 NLCD_WCS = "https://dmsdata.cr.usgs.gov/geoserver/wcs"
 NLCD_COVERAGE = "mrlc_Land-Cover_conus_year_data:Land-Cover_conus_year_data"
-NLCD_REGIONAL_CRS = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.crs
-NLCD_REGIONAL_RESOLUTION_M = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.resolution_m
-NLCD_REGIONAL_NODATA = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.nodata
+# Product-level Annual NLCD contract. These values are independent of the
+# Northern Colorado regression fixture and apply to any bounded AOI request.
+NLCD_NATIVE_CRS = "EPSG:5070"
+NLCD_NATIVE_RESOLUTION_M = 30.0
+NLCD_NATIVE_NODATA = 250
+NLCD_PRODUCT_RELEASE = "Annual NLCD Collection 1.2, 2025 land cover"
+NLCD_REGIONAL_CRS = str(NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.crs)
+NLCD_REGIONAL_RESOLUTION_M = float(NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.resolution_m)
+NLCD_REGIONAL_NODATA = int(NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.nodata)
 # The exact three-county bounding rectangle includes two detached components;
 # its measured provider-snapped window is about 45.7 million cells.
 NLCD_REGIONAL_MAX_CELLS = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.max_cells
+# Generic AOI requests use the same bounded native grid contract, but this limit
+# is deliberately not derived from the Northern Colorado fixture geometry.
+NLCD_AOI_MAX_CELLS = 50_000_000
 NLCD_RELEASE = NORTHERN_COLORADO_REGRESSION_FIXTURE.nlcd.release
 NLCD_CLASSES = {
     11: "open_water",
@@ -323,21 +333,63 @@ def _nlcd_regional_request(aoi_4326: Any) -> dict[str, Any]:
     }
 
 
-def _validate_nlcd_regional_raster(body: bytes, aoi_4326: Any) -> dict[str, Any]:
+def _nlcd_aoi_request(aoi_4326: Any) -> dict[str, Any]:
+    """Build a bounded native-product request from an arbitrary WGS84 AOI."""
+    to_product = Transformer.from_crs("EPSG:4326", NLCD_NATIVE_CRS, always_xy=True).transform
+    aoi_product = transform(to_product, aoi_4326)
+    minx, miny, maxx, maxy = aoi_product.bounds
+    width = max(1, int(np.ceil((maxx - minx) / NLCD_NATIVE_RESOLUTION_M)))
+    height = max(1, int(np.ceil((maxy - miny) / NLCD_NATIVE_RESOLUTION_M)))
+    estimated_cells = width * height
+    if estimated_cells > NLCD_AOI_MAX_CELLS:
+        raise ValueError(
+            "NLCD AOI request exceeds the bounded "
+            f"{NLCD_AOI_MAX_CELLS}-cell limit ({estimated_cells} estimated cells); "
+            "submit a smaller AOI; tiling is not implemented"
+        )
+    return {
+        "service": "WCS",
+        "version": "1.0.0",
+        "request": "GetCoverage",
+        "coverage": NLCD_COVERAGE,
+        "time": "2025-01-01T00:00:00.000Z",
+        "crs": NLCD_NATIVE_CRS,
+        "bbox": f"{minx},{miny},{maxx},{maxy}",
+        "resx": NLCD_NATIVE_RESOLUTION_M,
+        "resy": NLCD_NATIVE_RESOLUTION_M,
+        "format": "image/geotiff",
+    }
+
+
+def _validate_nlcd_regional_raster(
+    body: bytes,
+    aoi_4326: Any,
+    *,
+    max_cells: int = NLCD_REGIONAL_MAX_CELLS,
+    expected_crs: str = NLCD_REGIONAL_CRS,
+    expected_nodata: int = NLCD_REGIONAL_NODATA,
+    nominal_resolution_m: float = NLCD_REGIONAL_RESOLUTION_M,
+) -> dict[str, Any]:
     """Validate a provider-returned regional NLCD raster without resampling it."""
-    to_product = Transformer.from_crs("EPSG:4326", NLCD_REGIONAL_CRS, always_xy=True).transform
+    to_product = Transformer.from_crs("EPSG:4326", expected_crs, always_xy=True).transform
     aoi_product = transform(to_product, aoi_4326)
     with MemoryFile(body) as mem, mem.open() as dataset:
         if dataset.count != 1:
             raise ValueError("Regional NLCD response must contain exactly one categorical band")
-        if dataset.width * dataset.height > NLCD_REGIONAL_MAX_CELLS:
+        if dataset.width * dataset.height > max_cells:
             raise ValueError("Regional NLCD response exceeds the bounded cell limit")
-        if dataset.crs is None or dataset.crs.to_epsg() != 5070:
-            raise ValueError("Regional NLCD response CRS is not the native EPSG:5070 product CRS")
+        if (
+            dataset.crs is None
+            or dataset.crs.to_epsg() != CRS.from_user_input(expected_crs).to_epsg()
+        ):
+            raise ValueError("Regional NLCD response CRS is not the expected native product CRS")
         if dataset.dtypes[0] != "uint8":
             raise ValueError(f"Regional NLCD response must be uint8, got {dataset.dtypes[0]}")
         x_resolution, y_resolution = dataset.res
-        if not (29.0 <= x_resolution <= 31.0 and 29.0 <= y_resolution <= 31.0):
+        if not (
+            nominal_resolution_m - 1.0 <= x_resolution <= nominal_resolution_m + 1.0
+            and nominal_resolution_m - 1.0 <= y_resolution <= nominal_resolution_m + 1.0
+        ):
             raise ValueError(
                 "Regional NLCD response is not the nominal 30 m product grid: "
                 f"{x_resolution} x {y_resolution} m"
@@ -348,9 +400,9 @@ def _validate_nlcd_regional_raster(body: bytes, aoi_4326: Any) -> dict[str, Any]
             or dataset.transform.d != 0
         ):
             raise ValueError("Regional NLCD response is not a regular square aligned raster grid")
-        if dataset.nodata is None or int(dataset.nodata) != NLCD_REGIONAL_NODATA:
+        if dataset.nodata is None or int(dataset.nodata) != expected_nodata:
             raise ValueError(
-                f"Regional NLCD nodata must be {NLCD_REGIONAL_NODATA}, got {dataset.nodata}"
+                f"Regional NLCD nodata must be {expected_nodata}, got {dataset.nodata}"
             )
         values = dataset.read(1)
         inside = geometry_mask(
@@ -360,7 +412,7 @@ def _validate_nlcd_regional_raster(body: bytes, aoi_4326: Any) -> dict[str, Any]
             invert=True,
             all_touched=True,
         )
-        nodata_mask = values == NLCD_REGIONAL_NODATA
+        nodata_mask = values == expected_nodata
         observed_values = values[inside & ~nodata_mask]
         invalid = sorted(
             {int(value) for value in observed_values if int(value) not in NLCD_CLASSES}
@@ -396,7 +448,7 @@ def _validate_nlcd_regional_raster(body: bytes, aoi_4326: Any) -> dict[str, Any]
             "transform": list(dataset.transform)[:6],
             "bounds": [float(value) for value in dataset.bounds],
             "resolution_m": [float(x_resolution), float(y_resolution)],
-            "nominal_resolution_m": NLCD_REGIONAL_RESOLUTION_M,
+            "nominal_resolution_m": nominal_resolution_m,
             "nodata": int(dataset.nodata),
             "source_year": 2025,
             "coverage": {
@@ -425,6 +477,18 @@ def _validate_nlcd_regional_raster(body: bytes, aoi_4326: Any) -> dict[str, Any]
     if not observed_values.size:
         raise ValueError("Regional NLCD response contains no valid pixels inside the approved AOI")
     return profile
+
+
+def _validate_nlcd_aoi_raster(body: bytes, aoi_4326: Any) -> dict[str, Any]:
+    """Validate one bounded native NLCD raster against an arbitrary AOI."""
+    return _validate_nlcd_regional_raster(
+        body,
+        aoi_4326,
+        max_cells=NLCD_AOI_MAX_CELLS,
+        expected_crs=NLCD_NATIVE_CRS,
+        expected_nodata=NLCD_NATIVE_NODATA,
+        nominal_resolution_m=NLCD_NATIVE_RESOLUTION_M,
+    )
 
 
 def acquire_nlcd_regional(
@@ -477,6 +541,94 @@ def acquire_nlcd_regional(
             ],
             reason=(
                 "Regional raster contains nodata or uncovered AOI area; those locations remain unknown."
+                if has_nodata or has_uncovered
+                else None
+            ),
+        ),
+        value=profile,
+    )
+
+
+def acquire_nlcd_aoi(
+    session: Any,
+    data_root: Path,
+    aoi_4326: Any,
+    *,
+    aoi_context: AoiContext | None = None,
+    acquisition_callback: Callable[[Acquisition], None] | None = None,
+) -> ProviderData:
+    """Acquire one bounded Annual NLCD window for a persisted AOI revision."""
+    params = _nlcd_aoi_request(aoi_4326)
+    body, meta = fetch_raw(
+        session,
+        source_id="annual_nlcd",
+        provider="USGS EROS / MRLC Annual NLCD WCS",
+        release=NLCD_PRODUCT_RELEASE,
+        url=NLCD_WCS,
+        params=params,
+        data_root=data_root,
+        terms_url=TERMS["annual_nlcd"],
+        max_bytes=256_000_000,
+        media_type="image/tiff",
+        acquisition_callback=acquisition_callback,
+    )
+    if not meta.media_type.lower().startswith("image/tiff"):
+        raise ValueError(f"NLCD WCS returned {meta.media_type}, not a GeoTIFF")
+    profile = _validate_nlcd_aoi_raster(body, aoi_4326)
+    has_nodata = profile["pixel_accounting"]["nodata_pixel_count"] > 0
+    has_uncovered = profile["coverage"]["uncovered_aoi_area_sqkm"] > 0
+    provenance = _acquisition(meta)
+    if aoi_context is not None:
+        provenance.update(
+            {
+                "aoi_id": aoi_context.aoi_id,
+                "aoi_revision": aoi_context.revision,
+                "aoi_input_sha256": aoi_context.input_sha256,
+                "aoi_geometry_sha256": aoi_context.geometry_sha256,
+                "aoi_validation_policy": aoi_context.validation_policy,
+            }
+        )
+    provenance.update(
+        {
+            "source_collection": NLCD_PRODUCT_RELEASE,
+            "source_year": 2025,
+            "request_crs": NLCD_NATIVE_CRS,
+            "request_resolution_m": NLCD_NATIVE_RESOLUTION_M,
+            "request_estimated_cells": int(
+                np.ceil(
+                    (float(params["bbox"].split(",")[2]) - float(params["bbox"].split(",")[0]))
+                    / NLCD_NATIVE_RESOLUTION_M
+                )
+                * np.ceil(
+                    (float(params["bbox"].split(",")[3]) - float(params["bbox"].split(",")[1]))
+                    / NLCD_NATIVE_RESOLUTION_M
+                )
+            ),
+        }
+    )
+    return ProviderData(
+        SourceResult(
+            source_id="annual_nlcd",
+            validation_status=Maturity.VALIDATED,
+            validation_scope=(
+                "Automated official WCS window built from the selected persisted WGS84 AOI; "
+                "bounded native grid, inactive validation-only candidate"
+            ),
+            coverage_status=Coverage.PARTIAL if has_uncovered else Coverage.COMPLETE,
+            observation_status=Observation.INCOMPLETE_SOURCE
+            if has_nodata or has_uncovered
+            else Observation.DATA_OBSERVED,
+            product_status=NLCD_PRODUCT_RELEASE,
+            attempt_status=AttemptStatus.VALIDATED,
+            metrics=profile,
+            provenance=provenance,
+            warnings=[
+                "The returned raster is a bounded AOI window; national and historical bundles are not acquired.",
+                "Outside-AOI pixels and nodata are retained as accounting states, never as no constraint observed.",
+                "NLCD values are land-cover classifications, not wetlands, regulatory, or suitability determinations.",
+            ],
+            reason=(
+                "Raster contains nodata or uncovered AOI area; those locations remain unknown."
                 if has_nodata or has_uncovered
                 else None
             ),

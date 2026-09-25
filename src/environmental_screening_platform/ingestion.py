@@ -20,6 +20,9 @@ from .adapters import (
     acquire_nlcd_regional,
     acquire_ssurgo,
 )
+from .adapters import (
+    acquire_nlcd_aoi as acquire_nlcd_for_aoi,
+)
 from .aoi import AoiContext
 from .catalog import SourceRepository, SQLiteSourceRepository
 from .models import MATURITY, Acquisition
@@ -251,6 +254,13 @@ def ingest_source(
         return {"run": repository.get_run(run["run_id"]), "candidate": candidate}
 
     result = acquired.result.to_dict()
+    if revision is not None:
+        provenance = dict(result.get("provenance") or {})
+        provenance.setdefault("aoi_id", revision["aoi_id"])
+        provenance.setdefault("aoi_revision", int(revision["revision"]))
+        if revision.get("input_sha256"):
+            provenance.setdefault("aoi_input_sha256", revision["input_sha256"])
+        result["provenance"] = provenance
     status = _candidate_status(result)
     validation = {
         "validation_scope": result["validation_scope"],
@@ -417,7 +427,10 @@ def ingest_nlcd_regional(
         SourceRepository,
         repository if repository is not None else SQLiteSourceRepository(data_root),
     )
-    boundary = boundary_path or data_root / NORTHERN_COLORADO_REGRESSION_FIXTURE.canonical_boundary_relative_path
+    boundary = (
+        boundary_path
+        or data_root / NORTHERN_COLORADO_REGRESSION_FIXTURE.canonical_boundary_relative_path
+    )
     aoi = load_approved_aoi(data_root, boundary)
     http_session = session or requests.Session()
 
@@ -449,6 +462,47 @@ def ingest_nlcd_regional(
         _update_nlcd_regional_manifest(data_root, outcome, boundary_path=boundary)
     )
     return outcome
+
+
+def ingest_nlcd_aoi(
+    data_root: Path,
+    *,
+    project_id: str,
+    aoi_id: str | None = None,
+    repository: SourceRepository | None = None,
+    session: Any | None = None,
+) -> dict[str, Any]:
+    """Acquire Annual NLCD for the exact immutable AOI revision in a project."""
+    resolved_root = data_root.resolve()
+    geometry, revision = _aoi_context(resolved_root, project_id, aoi_id)
+    if geometry is None or revision is None:
+        raise ValueError("Generic NLCD acquisition requires a persisted AOI revision")
+    context = AoiContext.from_revision(revision)
+    http_session = session or requests.Session()
+
+    def acquire(
+        _source_id: str,
+        root: Path,
+        _aoi: Any,
+        callback: Callable[[Acquisition], None],
+    ) -> ProviderData:
+        return acquire_nlcd_for_aoi(
+            http_session,
+            root,
+            context.geometry,
+            aoi_context=context,
+            acquisition_callback=callback,
+        )
+
+    return ingest_source(
+        "annual_nlcd",
+        resolved_root,
+        project_id=project_id,
+        aoi_id=context.aoi_id,
+        repository=repository,
+        acquirer=acquire,
+        requested_url=REQUEST_URLS["annual_nlcd"],
+    )
 
 
 def retry_ingestion(

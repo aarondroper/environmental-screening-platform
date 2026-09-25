@@ -65,6 +65,14 @@ The repository includes migrations `001_aoi_revisions.sql`, `002_ssurgo_mapunits
 
 **Safety state:** The candidate remains `incomplete` / `conditionally_validated` / `partial` / `incomplete_source` / `not_promoted`. Its regional report, gap/overlap/seam diagnostics, checksums, package lineage, raw checksums, and provenance remain queryable outside Git. The active SSURGO pointer is absent. No other source or screening behavior changed.
 
+## Milestone 2B.14 — AOI-agnostic Annual NLCD acquisition
+
+**Status:** Implemented with deterministic mocked validation. The explicit `ingest-nlcd` command loads a persisted immutable `AoiContext`, constructs an official Annual NLCD WCS request from its WGS84 geometry, and records the AOI revision, input/geometry hashes, request parameters, native raster metadata, checksum, and inactive candidate lineage. The existing `ingest-nlcd-regional` command remains the Northern Colorado regression/fixture alias.
+
+**Verified scope:** Generic Polygon AOIs outside Northern Colorado are accepted by the generic policy. The generic path uses the native EPSG:5070/30 m grid, nodata 250, official NLCD class domain, outside-AOI accounting, and explicit nodata/unknown behavior. Oversized requests are rejected before HTTP with a bounded-request error; clipping and tiling are not implemented. Local tests cover request construction, geometry hashing, footprint/nodata accounting, checksum/provenance, persisted AOI binding, and rejection.
+
+**Explicit limits:** The generic path has not been live-tested against a new external AOI in this slice. It remains an inactive, validation-only candidate path and does not change NLCD source maturity, screening behavior, source scope, or active-version state. Generic SSURGO acquisition and source tiling remain future work.
+
 ## Selected sources and unresolved validation
 
 The known-good regression/demo geography remains Boulder County (08013), Larimer County (08069), and Weld County (08123). Owner-approved MVP source direction remains FEMA NFHL, PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and NRCS SSURGO hydric-soil information. NWI is excluded. See `SOURCE_FEASIBILITY.md` for evidence and terms.

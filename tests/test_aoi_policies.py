@@ -106,4 +106,5 @@ def test_aoi_revision_is_immutable_and_hash_provenance_is_preserved(tmp_path: Pa
     context = AoiContext.from_revision(first)
     assert context.aoi_id == first["aoi_id"]
     assert context.input_sha256 == first["input_sha256"]
+    assert first["geometry_sha256"] == context.geometry_sha256
     assert context.validation_policy == GENERIC_AOI_POLICY

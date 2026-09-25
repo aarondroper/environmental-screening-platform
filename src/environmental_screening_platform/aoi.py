@@ -79,11 +79,16 @@ class AoiContext:
     def from_revision(cls, revision: dict[str, Any]) -> AoiContext:
         from shapely.geometry import shape
 
+        geometry = shape(revision["geometry"])
+        geometry_sha256 = hashlib.sha256(geometry.wkb).hexdigest()
+        declared_geometry_sha256 = revision.get("geometry_sha256")
+        if declared_geometry_sha256 and declared_geometry_sha256 != geometry_sha256:
+            raise ValueError("AOI revision geometry hash does not match its geometry")
         return cls(
             project_id=str(revision["project_id"]),
             aoi_id=str(revision["aoi_id"]),
             revision=int(revision["revision"]),
-            geometry=shape(revision["geometry"]),
+            geometry=geometry,
             input_sha256=str(revision["input_sha256"]),
             spatial_validation=dict(revision["spatial_validation"]),
             validation_policy=str(revision.get("validation_policy", GENERIC_AOI_POLICY)),
@@ -92,6 +97,11 @@ class AoiContext:
     @staticmethod
     def hash_input(raw: bytes) -> str:
         return hashlib.sha256(raw).hexdigest()
+
+    @property
+    def geometry_sha256(self) -> str:
+        """Stable hash of the canonical geometry carried by this revision."""
+        return hashlib.sha256(self.geometry.wkb).hexdigest()
 
 
 def generic_aoi_policy() -> AoiValidationPolicy:

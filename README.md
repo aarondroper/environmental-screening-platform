@@ -65,6 +65,15 @@ For the bounded Annual NLCD path:
 
 This creates a single-source `nlcd_fixture_only` job. It reads only the exact snapshotted external GeoTIFF, reports footprint coverage, valid/nodata pixels, source class counts/percentages, and raster CRS/grid provenance, and does not claim full regional coverage or production readiness. NLCD pixels are summarized in JSON/CSV; no misleading pixel geometries are added to GeoJSON.
 
+For automated acquisition against any persisted generic AOI, use the explicit AOI-bound command:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" ingest-nlcd \
+  --project-id PROJECT_ID [--aoi-id AOI_ID]
+```
+
+This builds the official Annual NLCD WCS request from the selected immutable AOI revision, uses the native EPSG:5070/30 m grid and nodata/class contract, records the AOI geometry hash and exact request/provenance, and creates an inactive candidate. Requests above the bounded cell limit fail before HTTP acquisition; clipping and tiling are not implemented. Outside-AOI pixels and AOI nodata remain explicit non-observation/unknown states. `ingest-nlcd-regional` remains the Northern Colorado regression/fixture alias.
+
 For the bounded 3DEP elevation path:
 
 ```bash
@@ -156,4 +165,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation is implemented, but generic NLCD/SSURGO acquisition, source tiling, and arbitrary-AOI production coverage are not. Live small-AOI source requests, unified fixture screening, regional SSURGO staging, and inactive candidate materialization are not final source approval, production validation, or regional screening proof. The 19 package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation and bounded generic NLCD acquisition are implemented, but generic SSURGO acquisition, source tiling, and arbitrary-AOI production coverage are not. Live small-AOI source requests, unified fixture screening, regional SSURGO staging, generic NLCD acquisition, and inactive candidate materialization are not final source approval, production validation, or regional screening proof. The 19 package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
