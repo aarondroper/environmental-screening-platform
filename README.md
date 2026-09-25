@@ -47,7 +47,7 @@ AOI input is GeoJSON WGS84 longitude/latitude with one valid, nonempty Polygon o
   --aoi-policy northern_colorado_regression
 ```
 
-That policy automatically retrieves/caches the official 2025 TIGER/Line county ZIP when needed and retains the validated Boulder/Larimer/Weld fixture boundary. The official archive is about 84 MB; no other national environmental products are downloaded. Generic source acquisition is bounded and source-specific; generic SSURGO acquisition and multi-source mosaicking remain future work.
+That policy automatically retrieves/caches the official 2025 TIGER/Line county ZIP when needed and retains the validated Boulder/Larimer/Weld fixture boundary. The official archive is about 84 MB; no other national environmental products are downloaded. Generic source acquisition is bounded and source-specific; generic SSURGO package acquisition is now available, while staging, mosaicking, and regional coverage analysis remain separate work.
 
 The `screen` command creates a new source snapshot for the requested AOI and currently executes the local worker synchronously. The worker processes only the exact active versions captured at job creation; it does not acquire a newer candidate during execution. When passed `--database-url`, it can consume matching fixture-only SSURGO PostGIS records. The explicitly bounded command below is preferred for that path:
 
@@ -91,6 +91,15 @@ For AOI-agnostic 3DEP tile planning and acquisition, use:
 ```
 
 This queries the official TNM Access inventory for the persisted AOI, writes a deterministic one-product-per-intersecting-tile plan before downloading, and records each native 1/3-arc-second GeoTIFF as an inactive candidate with tile, release, request, raster metadata, checksum, and AOI geometry-hash provenance. Oversized AOIs, incomplete inventory responses, invalid URLs, unreadable/non-native rasters, nodata, and uncovered AOI areas remain explicit; tiles are not silently clipped, substituted, mosaicked, or activated. `screen-3dep-fixture` and the Northern Colorado regression workflows remain unchanged.
+
+For AOI-agnostic SSURGO survey-area discovery and package acquisition, use:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" ingest-ssurgo \
+  --project-id PROJECT_ID [--aoi-id AOI_ID]
+```
+
+This queries the official NRCS SDA intersection function for the persisted AOI, resolves current Web Soil Survey package URLs from `sacatalog` release metadata, writes a deterministic plan before package downloads, and enforces survey-area and aggregate-byte limits. Each ZIP is recorded as an inactive candidate with provider-reported/measured size, HTTP metadata, checksum, AOI revision/geometry-hash, and container validation. Failed downloads and package mismatches remain explicit candidates. `ingest-ssurgo-regional` remains the Northern Colorado 19-package regression alias; this generic path does not stage, repair, clip, measure coverage, or promote SSURGO, and hydric fields remain soil information rather than wetlands determinations.
 
 For the bounded multi-source fixture path:
 
@@ -174,4 +183,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation, bounded generic NLCD acquisition, and bounded 3DEP tile planning/acquisition are implemented, but generic SSURGO acquisition, mosaicking, and arbitrary-AOI production coverage are not. Live small-AOI source requests, unified fixture screening, regional SSURGO staging, generic NLCD/3DEP acquisition, and inactive candidate materialization are not final source approval, production validation, or regional screening proof. The 19 package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation, bounded generic NLCD acquisition, bounded 3DEP tile planning/acquisition, and bounded generic SSURGO package acquisition are implemented. Generic SSURGO staging, mosaicking, regional coverage analysis for arbitrary AOIs, and production coverage remain future work. The live generic SSURGO smoke acquired one official DC001 package outside Northern Colorado on 2026-09-25; the result is validation-only evidence, not final source approval or production readiness. The 19 Northern Colorado package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.

@@ -11,7 +11,7 @@ import io
 import json
 import zipfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -47,8 +47,9 @@ class SsurgoPackageSpec:
     saverest_provider: str
     package_url: str
     format: str
-    provider_reported_size_bytes: int
-    mapunit_count: int
+    provider_reported_size_bytes: int | None
+    mapunit_count: int | None = None
+    plan_metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def provider_release(self) -> str:
@@ -171,7 +172,10 @@ def acquire_ssurgo_package(
         media_type="application/zip",
         acquisition_callback=acquisition_callback,
     )
-    if metadata.provider_reported_size_bytes != spec.provider_reported_size_bytes:
+    if (
+        spec.provider_reported_size_bytes is not None
+        and metadata.provider_reported_size_bytes != spec.provider_reported_size_bytes
+    ):
         raise ValueError(
             f"{spec.areasymbol} provider size changed: sizing record reported "
             f"{spec.provider_reported_size_bytes}, response reported "
@@ -189,6 +193,7 @@ def acquire_ssurgo_package(
         "archive_validation": archive_validation,
         "regional_intersection_status": "survey area intersects exact approved AOI",
         "mapunit_count_from_sizing_record": spec.mapunit_count,
+        "package_plan": spec.plan_metadata,
         "data_use": "inactive validation-only package; not regional canonical coverage",
     }
     if not metrics["size_match"]:
@@ -219,6 +224,7 @@ def acquire_ssurgo_package(
                 "sizing_record_provider_reported_size_bytes": spec.provider_reported_size_bytes,
             },
             "archive_validation": archive_validation,
+            "package_plan": spec.plan_metadata,
         },
         warnings=[
             "Archive validation is inactive and validation-only; no SSURGO package is promoted.",

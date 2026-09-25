@@ -26,6 +26,7 @@ from .ingestion import (
 )
 from .spatial import PostGISRepository, PostGISUnavailable, census_boundary_record
 from .ssurgo import parse_ssurgo_fixture
+from .ssurgo_aoi import ingest_ssurgo_aoi
 from .ssurgo_regional import (
     audit_ssurgo_regional_discrepancies,
     validate_ssurgo_regional_packages,
@@ -161,6 +162,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     dep_ingest.add_argument("--project-id", required=True)
     dep_ingest.add_argument("--aoi-id")
+
+    ssurgo_ingest = sub.add_parser(
+        "ingest-ssurgo",
+        help="Discover and acquire bounded official SSURGO packages for a persisted AOI",
+    )
+    ssurgo_ingest.add_argument("--project-id", required=True)
+    ssurgo_ingest.add_argument("--aoi-id")
+    ssurgo_ingest.add_argument("--max-survey-areas", type=int, default=16)
+    ssurgo_ingest.add_argument("--max-total-bytes", type=int, default=500_000_000)
 
     regional_validate = sub.add_parser(
         "validate-ssurgo-regional",
@@ -358,6 +368,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.data_dir,
             project_id=args.project_id,
             aoi_id=args.aoi_id,
+        )
+    elif args.command == "ingest-ssurgo":
+        outcome = ingest_ssurgo_aoi(
+            args.data_dir,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+            max_survey_areas=args.max_survey_areas,
+            max_total_bytes=args.max_total_bytes,
         )
     elif args.command == "validate-ssurgo-regional":
         outcome = validate_ssurgo_regional_packages(

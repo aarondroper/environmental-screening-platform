@@ -11,7 +11,7 @@ Current status: Northern Colorado and the five-source MVP direction are owner-se
 
 ## AOI-agnostic foundation — first refactor
 
-The current AOI-agnostic implementation frontier also includes generic Annual NLCD acquisition and bounded 3DEP tile planning/acquisition; both remain inactive validation-only paths. Generic SSURGO acquisition, raster mosaicking, and arbitrary-AOI production coverage remain future work.
+The current AOI-agnostic implementation frontier includes generic Annual NLCD acquisition, bounded 3DEP tile planning/acquisition, and bounded SSURGO survey-area package discovery/acquisition; all remain inactive validation-only paths. SSURGO staging, raster mosaicking, and arbitrary-AOI production coverage remain future work.
 
 The 2026-09-25 live generic-AOI smoke passed for both paths using a dedicated Washington, DC-area AOI. The NLCD path required and now records a bounded padded request for very small AOIs; the 3DEP path selected and validated one official native tile. Measured IDs, checksums, sizes, and limitations are recorded in `PROJECT_STATE.md` and the external manifest; no active source version was created.
 
@@ -160,7 +160,15 @@ The contract is documented in `docs/SCREENING_CONTRACT.md`. It covers project/AO
 
 **Verified scope:** One product per intersecting tile is selected deterministically from official inventory metadata. Per-tile identifiers, URLs, release dates, request parameters, response headers, provider-reported and measured sizes, retrieval timestamps, checksums, AOI revision/geometry hash, external paths, and raster validation are retained. Validation covers readable single-band GeoTIFFs, EPSG:4269, 1/3-arc-second resolution, dimensions, supported datatype, regular transform, nodata `-999999`, footprint coverage, and raw elevation metadata. Nodata/uncovered areas remain unknown, and failed downloads remain explicit candidates/manifest failures. Tests cover discovery, deterministic planning, bounded limits, plan-before-download ordering, checksum/provenance, raster validation, and failed acquisition.
 
-**Explicit limits:** No generic-AOI live tile download was performed. The path does not clip, resample, mosaic, substitute, promote, derive slope/aspect, or claim full regional coverage or production readiness. `screen-3dep-fixture` and Northern Colorado regression behavior remain unchanged. Generic SSURGO acquisition, raster mosaicking, and full source approval remain future work.
+**Explicit limits:** No generic-AOI live tile download was performed. The path does not clip, resample, mosaic, substitute, promote, derive slope/aspect, or claim full regional coverage or production readiness. `screen-3dep-fixture` and Northern Colorado regression behavior remain unchanged. Generic SSURGO staging, raster mosaicking, and full source approval remain future work.
+
+## Milestone 2B.16 — AOI-agnostic SSURGO package discovery and acquisition
+
+**Status:** Implemented and live-smoke-verified on 2026-09-25. `ingest-ssurgo` queries the official NRCS SDA intersection function and `sacatalog` for the persisted AOI, resolves official WSS ZIP URLs from current release metadata, persists a deterministic plan before package-body requests, and records inactive package candidates through the existing SQLite acquisition/run/version model.
+
+**Verified scope:** A small Washington, DC generic AOI discovered DC001 outside the Northern Colorado fixture. The official 12,965,824-byte package passed streamed HTTP metadata, ZIP CRC, and spatial/tabular structure validation; SHA-256 is `e5aa8a7b9b08aadedc0eec206fc06323ff37515e00b5e6fc756f2e6c7bba0989`. The smoke plan, batch, manifest, raw package, candidate, and checksums are external under `/home/aarondroper/projects/environmental-screening-platform-data/live-generic-ssurgo-smoke-20260925/`.
+
+**Explicit limits:** Count and aggregate-size bounds reject before package-body acquisition when they cannot be enforced. Failed downloads and ZIP/package mismatches remain queryable candidates/attempts. No staging, repair, clipping, coverage analysis, promotion, generic SSURGO screening, or source-maturity change is included. `ingest-ssurgo-regional` remains the Northern Colorado regression alias.
 
 ## Completed validation work — regional SSURGO package acquisition
 

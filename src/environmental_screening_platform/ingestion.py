@@ -265,6 +265,8 @@ def ingest_source(
         provenance.setdefault("aoi_revision", int(revision["revision"]))
         if revision.get("input_sha256"):
             provenance.setdefault("aoi_input_sha256", revision["input_sha256"])
+        if revision.get("geometry_sha256"):
+            provenance.setdefault("aoi_geometry_sha256", revision["geometry_sha256"])
         result["provenance"] = provenance
     status = _candidate_status(result)
     validation = {
