@@ -289,7 +289,48 @@ const renderAoiMap = (aoi) => {
   return `<div class="aoi-map" data-aoi-map><div class="map-state map-state-loading" data-map-status role="status">Loading public basemap…</div></div>`;
 };
 
-export const renderScreeningReport = (report = {}) => {
+const layerState = (row) => {
+  if (row.id === "annual_nlcd" || row.id === "3dep") {
+    return { state: row.result ? "observed" : "unknown", label: "Metrics only", detail: "Recorded raster metrics; no browser-ready raster overlay is included." };
+  }
+  if (row.id === "ssurgo") return { state: "incomplete", label: "Incomplete", detail: "Fixture coverage is incomplete; no soil layer is rendered." };
+  if (row.id === "padus") return { state: "conditional", label: "Conditional / unknown", detail: "Regional coverage and repair statistics remain unverified." };
+  if (row.id === "fema_nfhl") return { state: "unavailable", label: "Unavailable / blocked", detail: "Provider access is blocked; no flood layer was screened." };
+  return { state: row.state, label: STATUS_LABELS[row.state] || row.state, detail: STATUS_HELP[row.state] || "No renderable layer was recorded." };
+};
+
+const workspaceSourceRow = (row) => {
+  const layer = layerState(row);
+  const metric = screeningMetrics(row).join("");
+  return `<article class="workspace-source" data-screening-source="${escapeHtml(row.id)}">
+    <div class="workspace-source-heading"><div><strong>${escapeHtml(row.label)}</strong><span class="workspace-source-id">${escapeHtml(row.id)}</span></div><div class="status-stack">${screeningStatus(row)}</div></div>
+    <div class="workspace-source-state"><span class="layer-state layer-state-${escapeHtml(layer.state)}">${escapeHtml(layer.label)}</span><span>${escapeHtml(layer.detail)}</span></div>
+    ${metric ? `<dl class="workspace-metrics">${metric}</dl>` : ""}
+    <details><summary>Source provenance and details</summary><div class="workspace-detail-copy"><p>${escapeHtml(row.result ? (row.result.observation_status === "data_observed" ? "Observed in the recorded AOI result." : row.result.observation_status) : row.source.status_only_reason || "No source-specific screening result was recorded.")}</p>${screeningProvenance(row)}<p class="muted">${escapeHtml(row.id === "ssurgo" ? "Hydric-soil information; not a wetlands inventory or regulatory determination." : row.id === "fema_nfhl" ? "Unmapped or unavailable FEMA areas remain unknown, not hazard-free." : row.id === "padus" ? "No PAD-US geometry is rendered because the source remains conditional/quarantined." : "No cross-source score or suitability conclusion is calculated.")}</p></div></details>
+  </article>`;
+};
+
+const workspaceLayerControl = (rows) => `<aside class="workspace-layer-control" aria-label="Map layer availability">
+  <div class="workspace-layer-heading"><div><p class="eyebrow">Map layers</p><strong>Recorded spatial content</strong></div><span class="layer-count">1 rendered</span></div>
+  <label class="workspace-layer workspace-layer-active"><input type="checkbox" checked disabled><span class="layer-swatch aoi-swatch"></span><span><strong>AOI boundary</strong><small>Rendered from the recorded WGS84 geometry</small></span></label>
+  ${rows.map((row) => { const layer = layerState(row); return `<div class="workspace-layer workspace-layer-${escapeHtml(layer.state)}"><span class="layer-swatch source-swatch"></span><span><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(layer.label)} · ${escapeHtml(layer.detail)}</small></span></div>`; }).join("")}
+  <p class="workspace-layer-note">Source overlays appear only when browser-ready geometry or raster previews are present in the report. This demonstration contains AOI geometry and source metrics, not source overlays.</p>
+</aside>`;
+
+const workspaceTabs = (activeTab) => {
+  const tabs = [["results", "Screening results"], ["reports", "Reports / exports"], ["sources", "Data sources"], ["activity", "Activity / provenance"]];
+  return `<nav class="workspace-tabs" aria-label="Screening workspace sections">${tabs.map(([id, label]) => `<a class="workspace-tab ${activeTab === id ? "workspace-tab-active" : ""}" aria-current="${activeTab === id ? "page" : "false"}" href="?tab=${id}">${label}</a>`).join("")}</nav>`;
+};
+
+const workspaceResultsPanel = (rows) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source summary</p><h2>Independent findings</h2></div><span class="muted">No composite environmental score</span></div><div class="workspace-source-list">${rows.map(workspaceSourceRow).join("")}</div><p class="workspace-guardrail">Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.”</p></div>`;
+
+const workspaceReportsPanel = () => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Recorded outputs</p><h2>Reports and exports</h2></div></div><p class="muted">These controls expose only artifacts present in the recorded demonstration. No live processing or provider access is performed.</p><div class="workspace-action-list"><a class="workspace-action workspace-action-primary" href="demo/report.json" download>Download JSON report</a><span class="workspace-action workspace-action-disabled" aria-disabled="true">CSV not included in fixture</span><span class="workspace-action workspace-action-disabled" aria-disabled="true">GeoJSON not included in fixture</span><a class="workspace-action" href="demo/report.json" target="_blank" rel="noreferrer">View underlying JSON</a></div></div>`;
+
+const workspaceSourcesPanel = (rows) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source catalog</p><h2>What is available to this report</h2></div></div><div class="workspace-source-catalog">${rows.map((row) => { const layer = layerState(row); const source = row.source; const candidate = source.candidates?.at(-1) || {}; const version = source.active_aoi_versions?.at(-1) || source.source_versions?.at(-1) || {}; return `<div class="workspace-catalog-row"><div><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(source.provider_release || candidate.provider_release || version.provider_release || "Release not recorded")}</small></div><div>${screeningStatus(row)}<small>${escapeHtml(layer.label)}</small></div><p>${escapeHtml(layer.detail)}</p></div>`; }).join("")}</div><p class="workspace-guardrail">PAD-US and FEMA are shown as source states only. Hydric-soil information is soil information, not a wetlands inventory or regulatory determination.</p></div>`;
+
+const workspaceActivityPanel = (report, rows, parent) => { const snapshots = rows.flatMap((row) => row.source.screening?.flatMap((job) => job.source_snapshots || []) || []); return `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Technical provenance</p><h2>Recorded activity</h2></div><a class="workspace-action" href="?view=operations">Open operations console</a></div><dl class="workspace-activity"><div><dt>Parent ingestion run</dt><dd><code>${escapeHtml(parent.parent_run_id || "—")}</code> · ${escapeHtml(parent.status || "recorded")}</dd></div><div><dt>Screening jobs</dt><dd>${formatNumber(report.screening_jobs?.length || 0, 0)} recorded</dd></div><div><dt>Source snapshots</dt><dd>${formatNumber(snapshots.length, 0)} immutable references<br>${snapshots.map((snapshot) => `<code>${escapeHtml(snapshot.snapshot_id)}</code>`).join(" · ") || "—"}</dd></div><div><dt>Geometry hash</dt><dd><code class="hash">${escapeHtml(report.aoi?.geometry_sha256)}</code></dd></div></dl><p class="workspace-guardrail">The operations console contains acquisition attempts, retries, candidates, promotion decisions, checksums, and detailed lifecycle evidence.</p></div>`; };
+
+export const renderScreeningReport = (report = {}, requestedTab = "results") => {
   const project = report.project || {};
   const aoi = report.aoi || {};
   const area = aoi.area || {};
@@ -297,18 +338,15 @@ export const renderScreeningReport = (report = {}) => {
   const parent = report.parent_ingestion_runs?.[0] || {};
   const screenedRows = rows.filter((row) => row.result);
   const timestamp = report.report_timestamp || parent.started_at || "Recorded fixture";
-  return `<div class="screening-app">
-    <header class="screening-header"><div><p class="eyebrow">Environmental Screening &amp; GeoData Operations Platform</p><h1>Environmental screening report</h1><p class="lede">A preliminary source-by-source review for one recorded area of interest.</p></div><nav aria-label="Application views"><span class="demo-badge">Recorded demonstration</span><a class="secondary-link" href="?view=operations">Technical operations view</a></nav></header>
-    <div class="screening-notice"><strong>Preliminary screening only.</strong> This recorded Washington, DC result is read-only. It does not provide a composite score, regulatory determination, safety conclusion, or suitability recommendation.</div>
-    <main>
-      <section class="screening-hero">
-        <div class="map-panel"><div class="section-heading"><div><p class="eyebrow">Study area</p><h2>Area of interest</h2></div><span class="map-crs">WGS84 · ${escapeHtml(aoi.policy || "generic")}</span></div>${renderAoiMap(aoi)}<div class="map-caption"><span>Recorded AOI geometry · source geometries not included</span><code>${escapeHtml(aoi.geometry_sha256)}</code></div></div>
-        <aside class="screening-summary"><p class="eyebrow">Report status</p><div class="report-status"><span class="badge badge-partial">Partial recorded result</span><span>${formatNumber(screenedRows.length, 0)} of ${formatNumber(rows.length, 0)} selected source pathways have screening results</span></div><dl class="summary-details"><div><dt>Project</dt><dd>${escapeHtml(project.name)}</dd><dd><code>${escapeHtml(project.project_id)}</code></dd></div><div><dt>AOI revision</dt><dd>${escapeHtml(aoi.aoi_id)} · revision ${escapeHtml(aoi.revision)}</dd></div><div><dt>Area</dt><dd>${formatNumber(area.value_sqkm, 5)} km² · ${escapeHtml(area.crs || "—")}</dd></div><div><dt>Recorded at</dt><dd>${escapeHtml(timestamp)}</dd></div></dl><div class="summary-warning"><strong>Interpretation guardrail</strong><p>Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.”</p></div></aside>
-      </section>
-      <section class="results-section"><div class="section-heading"><div><p class="eyebrow">Independent source results</p><h2>What the recorded sources show</h2></div><span class="muted">No composite environmental score</span></div><div class="screening-grid">${rows.map(screeningSourceCard).join("")}</div></section>
-      <section class="screening-footer-panel"><div><p class="eyebrow">Recorded report outputs</p><h2>Review and export</h2><p class="muted">Use the details disclosures on each source for exact version and checksum lineage. Provider access and live processing are not required for this demonstration.</p></div><div class="export-actions"><a class="button primary-button" href="demo/report.json" download>Download JSON report</a><span class="button disabled-button" aria-disabled="true">CSV not included in fixture</span><span class="button disabled-button" aria-disabled="true">GeoJSON not included in fixture</span></div></section>
-    </main>
-    <footer><span>Recorded screening projection · source metrics remain independent</span><a href="?view=operations">Open technical operations report</a></footer>
+  const activeTab = ["results", "reports", "sources", "activity"].includes(requestedTab) ? requestedTab : "results";
+  const tabPanel = activeTab === "reports" ? workspaceReportsPanel() : activeTab === "sources" ? workspaceSourcesPanel(rows) : activeTab === "activity" ? workspaceActivityPanel(report, rows, parent) : workspaceResultsPanel(rows);
+  return `<div class="workspace-shell">
+    <header class="workspace-header"><div class="workspace-brand"><span class="workspace-mark">ES</span><div><p class="eyebrow">Environmental Screening</p><strong>Preliminary workspace</strong></div></div><div class="workspace-header-meta"><span class="demo-badge">Recorded demonstration</span><a class="workspace-tech-link" href="?view=operations">Technical operations view</a></div></header>
+    <section class="workspace-project-header"><div><a class="workspace-backlink" href="?tab=results">Projects / recorded screening</a><div class="workspace-title-line"><h1>${escapeHtml(project.name || "Recorded environmental screening")}</h1><span class="badge badge-partial">Partial result</span></div><p class="workspace-meta-line">AOI ${escapeHtml(aoi.aoi_id)} · revision ${escapeHtml(aoi.revision)} · ${formatNumber(area.value_sqkm, 5)} km² · ${escapeHtml(aoi.policy || "generic")} policy · recorded ${escapeHtml(timestamp)}</p></div><div class="workspace-header-actions"><a class="workspace-action" href="?tab=results">Load recorded screening</a><a class="workspace-action workspace-action-primary" href="demo/report.json" download>Export JSON</a></div></section>
+    <div class="workspace-notice"><strong>Preliminary screening only.</strong> No composite score, regulatory determination, safety conclusion, or suitability recommendation is produced.</div>
+    ${workspaceTabs(activeTab)}
+    <main class="workspace-main"><section class="workspace-map-stage"><div class="workspace-map-toolbar"><div><p class="eyebrow">Map workspace</p><strong>Recorded area of interest</strong><span>WGS84 · ${escapeHtml(aoi.policy || "generic")} · geometry-only preview</span></div><span class="workspace-map-status">${formatNumber(screenedRows.length, 0)} of ${formatNumber(rows.length, 0)} sources observed</span></div><div class="workspace-map-wrap">${renderAoiMap(aoi)}${workspaceLayerControl(rows)}</div><div class="map-caption"><span>Recorded AOI geometry boundary only; source overlays are not present in this fixture.</span><code>${escapeHtml(aoi.geometry_sha256)}</code></div></section><aside class="workspace-sidebar"><div class="workspace-sidebar-head"><div><p class="eyebrow">${activeTab === "results" ? "Screening summary" : "Workspace view"}</p><h2>${escapeHtml(activeTab === "results" ? "Source findings" : activeTab === "reports" ? "Reports / exports" : activeTab === "sources" ? "Data sources" : "Activity / provenance")}</h2></div><span class="workspace-sidebar-count">${formatNumber(rows.length, 0)} sources</span></div>${tabPanel}</aside></main>
+    <footer class="workspace-footer"><span>Read-only recorded projection · independent source metrics</span><a href="?view=operations">Open technical operations report</a></footer>
   </div>`;
 };
 

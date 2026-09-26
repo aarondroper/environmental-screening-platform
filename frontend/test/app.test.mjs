@@ -83,9 +83,14 @@ test("formats artifact sizes without changing recorded values", () => {
   assert.equal(formatBytes(null), "—");
 });
 
-test("renders the environmental screening report as the primary map-centric experience", () => {
+test("renders the environmental screening workspace as the primary map-centric experience", () => {
   const html = renderScreeningReport(report);
-  assert.match(html, /Environmental screening report/);
+  assert.match(html, /workspace-shell/);
+  assert.match(html, /Environmental Screening/);
+  assert.match(html, /Screening results/);
+  assert.match(html, /Reports \/ exports/);
+  assert.match(html, /Data sources/);
+  assert.match(html, /Activity \/ provenance/);
   assert.match(html, /data-screening-source="annual_nlcd"/);
   assert.match(html, /data-screening-source="3dep"/);
   assert.match(html, /data-screening-source="ssurgo"/);
@@ -95,6 +100,7 @@ test("renders the environmental screening report as the primary map-centric expe
   assert.match(html, /Recorded AOI geometry/);
   assert.match(html, /Technical operations view/);
   assert.match(html, /No composite environmental score/);
+  assert.match(html, /Recorded AOI geometry boundary/);
 });
 
 test("shows recorded NLCD and 3DEP metrics without inventing a cross-source result", () => {
@@ -125,6 +131,42 @@ test("provides provenance disclosures and only claims available export artifacts
   assert.match(html, /Source provenance and details/);
   assert.match(html, /annual_nlcd:a8bcc633fd343366a5a135a3390eb02b8ecb21ce14ecd1f263a1886f9a344284/);
   assert.match(html, /recorded-nlcd-snapshot/);
+  assert.match(html, /Export JSON/);
+  const exports = renderScreeningReport(report, "reports");
+  assert.match(exports, /Download JSON report/);
+  assert.match(exports, /CSV not included in fixture/);
+  assert.match(exports, /GeoJSON not included in fixture/);
+});
+
+test("keeps the persistent layer control truthful about rendered and non-rendered sources", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /Map layer availability/);
+  assert.match(html, /AOI boundary/);
+  assert.match(html, /Annual NLCD 2025.*Metrics only/);
+  assert.match(html, /USGS 3DEP.*Metrics only/);
+  assert.match(html, /NRCS SSURGO.*Incomplete/);
+  assert.match(html, /PAD-US.*Conditional \/ unknown/);
+  assert.match(html, /FEMA NFHL.*Unavailable \/ blocked/);
+  assert.match(html, /no browser-ready raster overlay is included/);
+});
+
+test("renders secondary data-source and activity views without changing the recorded data", () => {
+  const sources = renderScreeningReport(report, "sources");
+  assert.match(sources, /Source catalog/);
+  assert.match(sources, /Annual NLCD Collection 1.2, 2025 land cover/);
+  assert.match(sources, /Provider access is blocked/);
+  assert.match(sources, /Hydric-soil information is soil information/);
+
+  const activity = renderScreeningReport(report, "activity");
+  assert.match(activity, /Technical provenance/);
+  assert.match(activity, /dc-smoke-parent-run/);
+  assert.match(activity, /recorded-nlcd-snapshot/);
+  assert.match(activity, /Open operations console/);
+});
+
+test("renders reports and export availability explicitly", () => {
+  const html = renderScreeningReport(report, "reports");
+  assert.match(html, /Reports and exports/);
   assert.match(html, /Download JSON report/);
   assert.match(html, /CSV not included in fixture/);
   assert.match(html, /GeoJSON not included in fixture/);

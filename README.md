@@ -167,15 +167,19 @@ npm run build
 python3 -m http.server 8080 --directory dist
 ```
 
-Open <http://localhost:8080/>. The primary route is a map-centric screening
-report that reads the checked-in `frontend/public/demo/report.json`, a
-recorded Washington, DC smoke result. It uses the recorded AOI geometry and
-source-specific metrics in a bundled Leaflet map with an attributed public
-OpenStreetMap basemap. The browser needs network access for those basemap
-tiles, but the report performs no environmental provider acquisition, backend
-processing, PostGIS access, raw source download, or new screening behavior. It
-does not present a composite score, safety/suitability conclusion, or regulatory
-determination.
+Open <http://localhost:8080/>. The primary route is a single-screen,
+map-centric screening workspace that reads the checked-in
+`frontend/public/demo/report.json`, a recorded Washington, DC smoke result. It
+uses the recorded AOI geometry and source-specific metrics in a bundled
+Leaflet map with an attributed public OpenStreetMap basemap. The map layer
+control renders the AOI boundary and truthfully identifies NLCD/3DEP as
+metrics-only; SSURGO, PAD-US, and FEMA remain incomplete, conditional, or
+unavailable rather than being represented by invented overlays. Secondary tabs
+expose reports/exports, data-source availability, and technical provenance.
+The browser needs network access for basemap tiles, but the workspace performs
+no environmental provider acquisition, backend processing, PostGIS access, raw
+source download, or new screening behavior. It does not present a composite
+score, safety/suitability conclusion, or regulatory determination.
 
 The report links to the secondary technical operations view at
 <http://localhost:8080/?view=operations>. That view projects the same report's

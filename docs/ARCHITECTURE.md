@@ -227,10 +227,14 @@ rejected states into success or absence.
 
 The static frontend is a read-only projection over this report contract.
 `frontend/src/main.mjs` loads the checked-in/generated `report-aoi-run` JSON
-document. Its primary route is a map-centric environmental screening report
-using the recorded AOI geometry and independent source metrics; `?view=operations`
-opens the secondary technical operations view with plans, attempts, candidates,
-promotions, and lifecycle detail. Neither route acquires data or connects to
+document. Its primary route is a full-viewport, map-centric environmental
+screening workspace with a compact project/AOI header, persistent layer
+availability control, independent source findings, and secondary tabs for
+reports/exports, data sources, and technical provenance. The workspace uses the
+recorded AOI geometry as its only rendered geometry in the checked-in fixture;
+NLCD and 3DEP are metrics-only because no browser-ready source overlays are in
+the report. `?view=operations` opens the secondary technical operations view
+with plans, attempts, candidates, promotions, and lifecycle detail. Neither route acquires data or connects to
 SQLite, PostGIS, or an API; the primary route does request public OpenStreetMap
 basemap tiles and shows their required attribution. The checked-in Washington,
 DC document is explicitly a recorded demonstration result. The frontend does

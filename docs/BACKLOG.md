@@ -74,6 +74,22 @@ the Python CLI/catalog/source adapters, and does not produce rankings,
 composite scores, safety conclusions, or regulatory determinations. Future
 live wiring remains a separate product/architecture decision.
 
+## Milestone 2B.22 — Primary map-centric screening workspace
+
+**Status:** Implemented. The static frontend primary route is now a
+full-viewport environmental screening workspace: the recorded Leaflet AOI map
+is the dominant surface, a persistent control shows which spatial layers are
+actually rendered or metrics-only/unavailable, and a compact sidebar presents
+independent NLCD, 3DEP, SSURGO, PAD-US, and FEMA states. Secondary tabs expose
+reports/exports, data-source availability, and technical provenance; the
+operations console remains at `?view=operations`.
+
+**Explicit limits:** This is still a read-only projection of the Washington,
+DC recorded report. It adds no source overlays, provider access, screening
+algorithm, API, or live processing. The map renders only the recorded AOI
+geometry, NLCD/3DEP remain metrics-only, and all source limitations and
+unknown states remain explicit.
+
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite

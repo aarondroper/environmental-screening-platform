@@ -9,8 +9,11 @@ fetch("demo/report.json")
     return response.json();
   })
   .then((report) => {
-    const operations = new URLSearchParams(window.location.search).get("view") === "operations";
-    root.innerHTML = operations ? renderReport(report) : renderScreeningReport(report);
+    const searchParams = new URLSearchParams(window.location.search);
+    const operations = searchParams.get("view") === "operations";
+    const activeTab = searchParams.get("tab") || "results";
+    root.classList.toggle("shell", operations);
+    root.innerHTML = operations ? renderReport(report) : renderScreeningReport(report, activeTab);
     document.title = `${report.project?.name || "Environmental Screening"} | ${operations ? "Operations" : "Screening Report"}`;
     if (!operations) {
       try {

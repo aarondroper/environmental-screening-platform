@@ -11,18 +11,20 @@ Verified on 2026-09-25 after runtime verification of the Milestone 2B.4 AOI boun
 - Raw source responses and local workspace/project/job/export records are written under an external `--data-dir`; the CLI rejects a data directory within this repository. Raw artifacts are not Git inputs.
 - Toolkit was inspected as an optional reference only. No toolkit import, dependency, symlink, submodule, or modification exists.
 
-## Read-only operations console
+## Static screening workspace and operations view
 
 Verified on 2026-09-26. `frontend/` contains a bundled Leaflet static
-environmental screening report as the primary route and the existing technical
-operations console at `?view=operations`, both consuming the `report-aoi-run`
+map-centric environmental screening workspace as the primary route and the
+existing technical operations console at `?view=operations`, both consuming the `report-aoi-run`
 JSON shape. A checked-in `frontend/public/demo/report.json` records the retained
 Washington, DC smoke scenario with its exact AOI polygon: active NLCD and 3DEP
 screening evidence, an incomplete/rejected SSURGO package path, and status-only
-PAD-US/FEMA outcomes. The primary report exposes the AOI map, source-specific
-metrics, provenance disclosures, limitations, and JSON export; the secondary
-view exposes plans, attempts, checksums, validation, promotion, active versions,
-immutable snapshots, and lifecycle detail. `npm test` and `npm run build` are
+PAD-US/FEMA outcomes. The primary workspace keeps the Leaflet AOI map dominant,
+shows a persistent truthful layer-availability control, compact independent
+source findings, and secondary tabs for reports/exports, data sources, and
+technical provenance. The operations view exposes plans, attempts, checksums,
+validation, promotion, active versions, immutable snapshots, and lifecycle
+detail. `npm test` and `npm run build` are
 the local frontend checks; serving `frontend/dist` is a static preview only. No
 backend, environmental provider access, PostGIS connection, raw artifact,
 authentication, worker, or new screening behavior was added. The primary map
