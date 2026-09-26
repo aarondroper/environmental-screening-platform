@@ -21,7 +21,7 @@
       "validation_policy": "generic"
     }
   },
-  "selected_sources": ["annual_nlcd", "3dep", "ssurgo"],
+  "selected_sources": ["annual_nlcd", "3dep", "ssurgo", "padus", "fema_nfhl"],
   "parent_ingestion_runs": [
     {
       "parent_run_id": "dc-smoke-parent-run",
@@ -110,12 +110,41 @@
       "promotion_decisions": [{ "decision": "rejected", "decision_id": "recorded-ssurgo-rejection", "reason": "Regional canonical coverage is incomplete; candidate remains inactive." }],
       "screening": [],
       "lifecycle": { "stopped_at": "incomplete", "acquired": { "observed": true, "attempt_count": 2, "artifact_count": 1 }, "validated": { "observed": true }, "promoted": { "observed": false, "active_version_ids": [] }, "screened": { "observed": false, "job_ids": [], "snapshot_ids": [] }, "failed": [{ "run_id": "recorded-ssurgo-failed-run", "status": "failed", "reason": "Transient provider response before retry" }], "incomplete": [{ "candidate_id": "bf5f2008-7816-41f6-9105-9171a55e6522", "status": "incomplete", "coverage_status": "partial", "observation_status": "incomplete_source", "reason": "Survey-area package is structurally validated but regional canonical coverage is incomplete." }], "unavailable": [], "rejected": [{ "candidate_id": "bf5f2008-7816-41f6-9105-9171a55e6522", "reason": "Regional canonical coverage is incomplete; candidate remains inactive." }], "unknown": [], "blocked": [], "quarantined": [] }
+    },
+    "padus": {
+      "source_id": "padus",
+      "parent_summaries": [],
+      "acquisition_summary": { "planned_artifact_counts": [], "acquired_artifact_counts": [], "bytes_downloaded": [] },
+      "ingestion_runs": [],
+      "candidates": [],
+      "source_versions": [],
+      "active_aoi_versions": [],
+      "promotion_decisions": [],
+      "screening": [],
+      "availability_status": "unknown",
+      "status_only_reason": "Conditionally validated/quarantined; regional coverage and repair statistics remain unverified, so no PAD-US acquisition or screening was performed.",
+      "lifecycle": { "stopped_at": "unknown", "acquired": { "observed": false, "attempt_count": 0, "artifact_count": 0 }, "validated": { "observed": false }, "promoted": { "observed": false, "active_version_ids": [] }, "screened": { "observed": false, "job_ids": [], "snapshot_ids": [] }, "failed": [], "incomplete": [], "unavailable": [], "rejected": [], "unknown": [{ "reason": "Regional PAD-US coverage and repair statistics remain unverified." }], "blocked": [], "quarantined": [{ "reason": "Repaired candidates remain quarantined under the audited geometry policy." }] }
+    },
+    "fema_nfhl": {
+      "source_id": "fema_nfhl",
+      "parent_summaries": [],
+      "acquisition_summary": { "planned_artifact_counts": [], "acquired_artifact_counts": [], "bytes_downloaded": [] },
+      "ingestion_runs": [],
+      "candidates": [],
+      "source_versions": [],
+      "active_aoi_versions": [],
+      "promotion_decisions": [],
+      "screening": [],
+      "availability_status": "unavailable",
+      "status_only_reason": "Selected source; unavailable to this recorded run because provider access is blocked; technical suitability and effective/pending sample validation remains incomplete.",
+      "lifecycle": { "stopped_at": "blocked", "acquired": { "observed": false, "attempt_count": 0, "artifact_count": 0 }, "validated": { "observed": false }, "promoted": { "observed": false, "active_version_ids": [] }, "screened": { "observed": false, "job_ids": [], "snapshot_ids": [] }, "failed": [], "incomplete": [{ "reason": "Effective/pending NFHL sample validation remains incomplete." }], "unavailable": [], "rejected": [], "unknown": [{ "reason": "Unmapped or unavailable FEMA coverage must remain unknown, not hazard-free." }], "blocked": [{ "reason": "Provider access blocked; effective/pending sample validation incomplete." }], "quarantined": [] }
     }
   },
   "warnings": [
     "This report is read-only and preserves source-specific lifecycle states; it does not infer an overall suitability or absence conclusion.",
     "Unknown, unavailable, incomplete, nodata, pending, and quarantined states remain distinct from no constraint observed.",
-    "SSURGO is represented by an inactive, incomplete package candidate; hydric-soil information is not a wetlands inventory or regulatory determination."
+    "SSURGO is represented by an inactive, incomplete package candidate; lifecycle and rejected disposition remain separate, and hydric-soil information is not a wetlands inventory or regulatory determination.",
+    "PAD-US is status-only (conditionally validated/quarantined) and FEMA NFHL is status-only (provider access blocked); neither was acquired, validated, promoted, or screened in this report."
   ],
   "demo_source_evidence": {
     "retained_artifacts": ["Annual NLCD 2025 GeoTIFF", "USGS 3DEP 1/3 arc-second tile", "NRCS SSURGO DC001 package"],

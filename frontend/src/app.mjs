@@ -23,6 +23,7 @@ const STATUS_LABELS = {
   rejected: "Rejected",
   unknown: "Unknown",
   blocked: "Blocked",
+  quarantined: "Quarantined",
   failed: "Failed",
   not_started: "Not started",
 };
@@ -37,6 +38,7 @@ const STATUS_HELP = {
   rejected: "A candidate or promotion decision was rejected.",
   unknown: "The report does not establish an observation for this source.",
   blocked: "Provider access or a source gate blocked processing.",
+  quarantined: "Source geometry or observations were retained for review and not accepted.",
   failed: "An acquisition or processing attempt failed.",
   not_started: "No lifecycle record was found.",
 };
@@ -65,13 +67,46 @@ const formatNumber = (value, digits = 2) => {
 
 const lifecycleState = (source = {}) => {
   const lifecycle = source.lifecycle || {};
-  for (const state of ["blocked", "rejected", "unavailable", "incomplete", "failed", "unknown"]) {
+  for (const state of ["blocked", "unavailable", "incomplete", "failed", "unknown", "quarantined"]) {
     if ((lifecycle[state] || []).length) return state;
   }
   for (const stage of ["screened", "promoted", "validated", "acquired"]) {
     if (lifecycle[stage]?.observed) return stage;
   }
   return lifecycle.stopped_at || "not_started";
+};
+
+const candidateDispositionState = (row = {}) => {
+  const source = row.source || {};
+  const lifecycle = row.lifecycle || {};
+  const decisions = source.promotion_decisions || [];
+  if (decisions.some((decision) => decision.decision === "rejected") || lifecycle.rejected?.length) return "rejected";
+  if (lifecycle.promoted?.observed) return "promoted";
+  const candidate = source.candidates?.at(-1);
+  if (candidate?.status === "incomplete" || lifecycle.incomplete?.length) return "incomplete";
+  if (candidate?.status === "validated" || lifecycle.validated?.observed) return "validated";
+  if (candidate?.status === "acquired" || lifecycle.acquired?.observed) return "acquired";
+  return "unknown";
+};
+
+const stageApplicable = (row, stage) => {
+  const lifecycle = row.lifecycle || {};
+  if (lifecycle[stage]?.observed) return true;
+  if (["blocked", "unavailable", "unknown", "quarantined"].includes(row.state)) return false;
+  if (["planned", "acquired", "validated"].includes(stage)) {
+    return Boolean(row.source.parent_summaries?.length || row.source.ingestion_runs?.length || row.source.candidates?.length || row.source.source_versions?.length || row.source.screening?.length);
+  }
+  if (stage === "promoted") return Boolean(row.source.candidates?.length || row.source.promotion_decisions?.length || lifecycle.validated?.observed);
+  if (stage === "screened") return Boolean(row.source.screening?.length || lifecycle.promoted?.observed || lifecycle.validated?.observed);
+  return false;
+};
+
+export const summarizeStage = (rows, stage) => {
+  const applicableRows = rows.filter((row) => stageApplicable(row, stage));
+  const observed = applicableRows.filter((row) => stage === "planned"
+    ? Boolean(row.source.parent_summaries?.length)
+    : row.lifecycle[stage]?.observed).length;
+  return { observed, applicable: applicableRows.length, excluded: rows.length - applicableRows.length };
 };
 
 export const sourceRows = (report = {}) => {
@@ -126,7 +161,8 @@ const sourceDetail = (row) => {
   const attempts = source.ingestion_runs?.flatMap((run) => run.acquisition_attempts || []) || [];
   const result = row.result || {};
   const provenance = result.provenance || {};
-  const error = lifecycle.incomplete?.at(-1)?.reason || lifecycle.failed?.at(-1)?.reason || result.reason;
+  const error = lifecycle.incomplete?.at(-1)?.reason || lifecycle.failed?.at(-1)?.reason || lifecycle.blocked?.at(-1)?.reason || lifecycle.unknown?.at(-1)?.reason || source.status_only_reason || result.reason;
+  const disposition = candidateDispositionState(row);
   return `<article class="source-card" data-source="${escapeHtml(row.id)}">
     <div class="source-card-heading"><div><p class="eyebrow">Source pathway</p><h3>${escapeHtml(row.label)}</h3></div>${statusBadge(row.state)}</div>
     <div class="lifecycle" aria-label="${escapeHtml(row.label)} lifecycle">
@@ -141,7 +177,9 @@ const sourceDetail = (row) => {
     </div>
     <dl class="provenance">
       <div><dt>Candidate</dt><dd><code>${escapeHtml(candidate.candidate_id)}</code> · ${escapeHtml(candidate.status || "—")}</dd></div>
-      <div><dt>Promotion</dt><dd>${lifecycle.promoted?.observed ? statusBadge("promoted") : statusBadge(row.state === "incomplete" ? "incomplete" : "unknown")}</dd></div>
+      <div><dt>Lifecycle</dt><dd>${statusBadge(row.state)} <small>${escapeHtml(lifecycle.stopped_at || row.state)}</small></dd></div>
+      <div><dt>Candidate disposition</dt><dd>${statusBadge(disposition)}</dd></div>
+      ${source.availability_status ? `<div><dt>Availability</dt><dd>${statusBadge(source.availability_status)}</dd></div>` : ""}
       <div><dt>Active version</dt><dd><code>${escapeHtml(version.version_id || lifecycle.promoted?.active_version_ids?.at(-1))}</code></dd></div>
       <div><dt>Checksum</dt><dd><code class="hash">${escapeHtml(candidate.sha256 || version.sha256 || provenance.sha256)}</code></dd></div>
       <div><dt>Artifact path</dt><dd class="path">${escapeHtml(candidate.artifact_path || version.artifact_path)}</dd></div>
@@ -160,6 +198,15 @@ export const renderReport = (report = {}) => {
   const parent = report.parent_ingestion_runs?.[0] || {};
   const plan = parent.plan_record?.plan || parent.summary || {};
   const overall = parent.status || report.job_outcome?.overall_status || "recorded";
+  const timeline = ["planned", "acquired", "validated", "promoted", "screened"].map((stage, index) => {
+    const summary = summarizeStage(rows, stage);
+    const complete = summary.applicable > 0 && summary.observed === summary.applicable;
+    const partial = summary.observed > 0 && !complete;
+    const state = summary.applicable === 0 ? "not_applicable" : complete ? "complete" : partial ? "partial" : "pending";
+    const detail = summary.applicable === 0 ? "No applicable source evidence" : `${summary.observed} of ${summary.applicable} applicable source${summary.applicable === 1 ? "" : "s"}`;
+    const visualState = state === "complete" ? "done" : state === "not_applicable" ? "na" : state;
+    return `<div class="timeline-step timeline-${visualState}"><span>${index + 1}</span><strong>${escapeHtml(stage[0].toUpperCase() + stage.slice(1))}</strong><small>${escapeHtml(state === "partial" ? `Partial · ${detail}` : state === "complete" ? detail : state === "not_applicable" ? detail : `Pending · ${detail}`)}</small></div>`;
+  }).join("");
   return `<div class="console-header">
     <div><p class="eyebrow">Environmental Screening &amp; GeoData Operations Platform</p><h1>Operations console</h1><p class="lede">A read-only projection of one deterministic AOI lifecycle.</p></div>
     <span class="demo-badge">Recorded demonstration</span>
@@ -175,14 +222,14 @@ export const renderReport = (report = {}) => {
   </section>
   <section class="panel lifecycle-panel"><div class="section-heading"><div><p class="eyebrow">Control-plane evidence</p><h2>Ingestion lifecycle</h2></div><a class="button" href="demo/report.json" download>Download JSON report</a></div>
     <div class="run-summary"><div><span class="label">Deterministic plan</span><strong>${escapeHtml(parent.plan_id || plan.plan_id || "—")}</strong><span>${escapeHtml(parent.plan_record?.observed_size_bytes ?? parent.summary?.plan_size_bytes ?? "—")} bytes · ${escapeHtml(parent.plan_record?.observed_sha256 || parent.summary?.plan_sha256 || "checksum unavailable")}</span></div><div><span class="label">Sources selected</span><strong>${rows.length}</strong><span>${valueList(rows.map((row) => row.label))}</span></div><div><span class="label">Parent run</span><strong>${escapeHtml(parent.parent_run_id || "—")}</strong><span>${escapeHtml(parent.started_at || "Recorded fixture")}</span></div></div>
-    <div class="timeline">${["planned", "acquired", "validated", "promoted", "screened"].map((stage, index) => `<div class="timeline-step ${index < 4 ? "timeline-done" : ""}"><span>${index + 1}</span><strong>${escapeHtml(stage[0].toUpperCase() + stage.slice(1))}</strong><small>${stage === "screened" ? `${report.screening_jobs?.length || 0} job(s)` : stage === "planned" ? `${report.parent_ingestion_runs?.length || 0} plan(s)` : "Source-specific evidence"}</small></div>`).join("")}</div>
+    <div class="timeline">${timeline}</div>
   </section>
   <section class="panel"><div class="section-heading"><div><p class="eyebrow">Independent source state</p><h2>Source lifecycle matrix</h2></div><p class="muted">Each source is evaluated independently; there is no composite score.</p></div>
-    <div class="table-wrap"><table><thead><tr><th>Source</th><th>Lifecycle stop</th><th>Coverage / observation</th><th>Jobs / snapshots</th><th>Warnings</th></tr></thead><tbody>${rows.map((row) => { const l=row.lifecycle; const result=row.result||{}; return `<tr><th>${escapeHtml(row.label)}<small>${escapeHtml(row.id)}</small></th><td>${statusBadge(row.state)}<small>${escapeHtml(l.stopped_at || row.state)}</small></td><td><span>${escapeHtml(result.coverage_status || l.coverage_statuses?.at(-1) || "unknown")}</span><small>${escapeHtml(result.observation_status || l.observation_statuses?.at(-1) || "unknown")}</small></td><td><span>${l.screened?.job_ids?.length || 0} screened</span><small>${l.screened?.snapshot_ids?.length || 0} immutable snapshots</small></td><td>${(l.failed?.length || 0) + (l.incomplete?.length || 0) + (l.unknown?.length || 0) > 0 ? statusBadge(l.failed?.length ? "failed" : "incomplete") : "—"}</td></tr>`; }).join("")}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Source</th><th>Lifecycle stop</th><th>Coverage / observation</th><th>Jobs / snapshots</th><th>Warnings / disposition</th></tr></thead><tbody>${rows.map((row) => { const l=row.lifecycle; const result=row.result||{}; const warningState = l.failed?.length ? "failed" : l.blocked?.length ? "blocked" : l.unavailable?.length ? "unavailable" : l.rejected?.length ? "rejected" : l.incomplete?.length ? "incomplete" : l.quarantined?.length ? "quarantined" : l.unknown?.length ? "unknown" : null; return `<tr><th>${escapeHtml(row.label)}<small>${escapeHtml(row.id)}</small></th><td>${statusBadge(row.state)}<small>${escapeHtml(l.stopped_at || row.state)}</small></td><td><span>${escapeHtml(result.coverage_status || l.coverage_statuses?.at(-1) || "unknown")}</span><small>${escapeHtml(result.observation_status || l.observation_statuses?.at(-1) || "unknown")}</small></td><td><span>${l.screened?.job_ids?.length || 0} screened</span><small>${l.screened?.snapshot_ids?.length || 0} immutable snapshots</small></td><td>${warningState ? statusBadge(warningState) : "—"}${warningState === "rejected" || row.source.promotion_decisions?.some((decision) => decision.decision === "rejected") ? ` ${statusBadge("rejected")}` : ""}</td></tr>`; }).join("")}</tbody></table></div>
   </section>
   <section class="source-grid">${rows.map(sourceDetail).join("")}</section>
   <section class="panel warnings"><div class="section-heading"><div><p class="eyebrow">Interpretation guardrails</p><h2>Warnings and limitations</h2></div></div><ul>${(report.warnings || []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("") || "<li>No additional warnings recorded.</li>"}</ul><p class="muted">Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.”</p></section>
   <footer><span>Read-only local projection · no provider access</span><a href="demo/report.json">View underlying report JSON</a></footer>`;
 };
 
-export { formatBytes, lifecycleState };
+export { formatBytes, lifecycleState, candidateDispositionState };

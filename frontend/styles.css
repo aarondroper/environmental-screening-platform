@@ -48,6 +48,10 @@ code { font-family: "SFMono-Regular", Consolas, monospace; font-size: .77rem; ov
 .timeline-step strong, .timeline-step small { padding-left: 30px; }
 .timeline-done { border-color: var(--accent); }
 .timeline-done span { background: var(--accent); color: white; }
+.timeline-partial { border-color: var(--warning); }
+.timeline-partial span { background: var(--warning); color: white; }
+.timeline-na { border-color: var(--muted); }
+.timeline-na span { background: var(--muted); color: white; }
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; min-width: 760px; }
 th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 14px 12px; vertical-align: top; font-size: .88rem; }
