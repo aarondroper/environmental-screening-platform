@@ -20,11 +20,11 @@ JSON shape. A checked-in `frontend/public/demo/report.json` records the retained
 Washington, DC smoke scenario with its exact AOI polygon: active NLCD and 3DEP
 screening evidence, an incomplete/rejected SSURGO package path, and status-only
 PAD-US/FEMA outcomes. The primary workspace keeps the Leaflet AOI map dominant,
-shows a persistent truthful layer-availability control, compact independent
-source findings, and secondary tabs for reports/exports, data sources, and
-technical provenance. The primary results view uses compact collapsed source
-rows with observed metrics inline; hashes, IDs, and detailed provenance remain
-in secondary views. The operations view exposes plans, attempts, checksums,
+shows a compact collapsed layer-availability control, compact independent
+source findings, and primary tabs for Screening, Reports, and Data sources.
+Observed metrics are inline; hashes, IDs, and detailed provenance remain in
+the data-source details and separate operations view. The operations view
+exposes plans, attempts, checksums,
 validation, promotion, active versions, immutable snapshots, and lifecycle
 detail. `npm test` and `npm run build` are
 the local frontend checks; serving `frontend/dist` is a static preview only. No

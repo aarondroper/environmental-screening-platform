@@ -355,3 +355,35 @@ footer a { color: var(--accent); font-weight: 700; }
   .workspace-source-teaser { grid-column: 1 / -1; grid-row: 2; padding-top: 1px; }
   .workspace-source-summary > .status-stack { grid-column: 2; grid-row: 1; }
 }
+
+/* Final shell alignment: one desktop header, three user-facing tabs, and a map-first split. */
+.workspace-header { min-height: 52px; padding: 7px 16px; }
+.workspace-header-project, .workspace-header-status, .workspace-header-actions { display: flex; align-items: center; gap: 9px; }
+.workspace-header-project { min-width: 0; }
+.workspace-header-project h1 { margin: 0; max-width: 43vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; letter-spacing: -.025em; }
+.workspace-header-project > div > span { display: block; margin-top: 2px; color: #b8d2ca; font-size: .62rem; white-space: nowrap; }
+.workspace-header-status { flex-shrink: 0; color: #d7eee7; font-size: .68rem; }
+.workspace-header-actions { flex-shrink: 0; }
+.workspace-header-actions .workspace-action { min-height: 28px; }
+.workspace-header-actions .workspace-tech-link { color: #d7eee7; font-size: .68rem; }
+.workspace-tabs { flex: 0 0 auto; min-height: 35px; }
+.workspace-main { grid-template-columns: minmax(0, 2.05fr) minmax(290px, 1fr); }
+.workspace-sidebar-head { align-items: start; }
+.workspace-preliminary { display: block; margin-top: 3px; color: var(--muted); font-size: .61rem; }
+.workspace-panel-heading { margin-bottom: 5px; }
+.workspace-panel-heading .eyebrow { display: none; }
+.workspace-panel-heading h2 { font-size: .82rem; }
+@media (max-width: 900px) {
+  .workspace-main { grid-template-columns: 1fr; grid-template-rows: minmax(390px, 58dvh) minmax(350px, auto); }
+  .workspace-sidebar { max-height: none; border-radius: 10px 10px 0 0; }
+}
+@media (max-width: 620px) {
+  .workspace-header { align-items: flex-start; flex-wrap: wrap; min-height: 59px; padding: 6px 10px; }
+  .workspace-header-project { flex: 1 1 100%; }
+  .workspace-header-project h1 { max-width: 66vw; font-size: .84rem; }
+  .workspace-header-project > div > span { font-size: .58rem; }
+  .workspace-header-status { order: 3; margin-left: 36px; font-size: .61rem; }
+  .workspace-header-actions { margin-left: auto; }
+  .workspace-header-actions .workspace-tech-link { display: none; }
+  .workspace-main { grid-template-rows: minmax(380px, 58dvh) minmax(360px, auto); }
+}

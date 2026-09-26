@@ -382,6 +382,17 @@ The read-only parsing/QA, discrepancy-audit, owner-approved derived staging, and
 
 **Acceptance criteria:** A screening request returns without waiting for the full calculation; the worker produces deterministic, interpretable results for known fixtures; failures are recoverable and visible; retries do not create inconsistent duplicate results.
 
+## Focused usability follow-up — compact screening workspace
+
+**Status:** Completed 2026-09-26
+
+The primary frontend now uses a compact one-row header, a roughly two-thirds
+map / one-third summary desktop split, a collapsed layer control, compact
+expandable source rows, and a map-first mobile layout. Primary navigation is
+limited to Screening, Reports, and Data sources. The operations console remains
+a separate technical route. No source semantics, screening behavior, or
+browser-ready environmental overlays changed.
+
 ## Milestone 7 — Backend API and operational endpoints
 
 **Priority:** P1

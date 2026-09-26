@@ -178,7 +178,9 @@ unavailable rather than being represented by invented overlays. Secondary tabs
 expose reports/exports, data-source availability, and technical provenance.
 The primary results list is intentionally compact: observed metrics are shown
 inline, source details are expandable, and hashes, IDs, and operational
-history stay in the secondary technical views.
+history stay in the secondary technical views. Primary navigation is limited
+to Screening, Reports, and Data sources; the operations console is a separate
+technical route rather than part of the screening workspace.
 The browser needs network access for basemap tiles, but the workspace performs
 no environmental provider acquisition, backend processing, PostGIS access, raw
 source download, or new screening behavior. It does not present a composite

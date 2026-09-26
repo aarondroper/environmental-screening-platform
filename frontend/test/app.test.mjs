@@ -86,11 +86,11 @@ test("formats artifact sizes without changing recorded values", () => {
 test("renders the environmental screening workspace as the primary map-centric experience", () => {
   const html = renderScreeningReport(report);
   assert.match(html, /workspace-shell/);
-  assert.match(html, /Environmental Screening/);
-  assert.match(html, /Screening results/);
-  assert.match(html, /Reports \/ exports/);
+  assert.match(html, /workspace-header-project/);
+  assert.match(html, /Screening/);
+  assert.match(html, /Reports/);
   assert.match(html, /Data sources/);
-  assert.match(html, /Activity \/ provenance/);
+  assert.doesNotMatch(html, /Activity \/ provenance/);
   assert.match(html, /data-screening-source="annual_nlcd"/);
   assert.match(html, /data-screening-source="3dep"/);
   assert.match(html, /data-screening-source="ssurgo"/);
@@ -98,7 +98,7 @@ test("renders the environmental screening workspace as the primary map-centric e
   assert.match(html, /data-screening-source="padus"/);
   assert.match(html, /class="aoi-map"/);
   assert.match(html, /Recorded AOI geometry boundary/);
-  assert.match(html, /Technical operations view/);
+  assert.match(html, /Technical view/);
   assert.match(html, /No composite score/);
   assert.match(html, /Recorded AOI geometry boundary/);
 });
@@ -143,7 +143,8 @@ test("provides provenance disclosures and only claims available export artifacts
 
 test("keeps the persistent layer control truthful about rendered and non-rendered sources", () => {
   const html = renderScreeningReport(report);
-  assert.match(html, /class="workspace-layer-control" aria-label="Map layer availability" open/);
+  assert.match(html, /class="workspace-layer-control" aria-label="Map layer availability"/);
+  assert.doesNotMatch(html, /class="workspace-layer-control" aria-label="Map layer availability" open/);
   assert.match(html, /data-aoi-visibility/);
   assert.match(html, /AOI boundary/);
   assert.match(html, /Annual NLCD 2025.*Metrics only/);
@@ -170,12 +171,9 @@ test("renders secondary data-source and activity views without changing the reco
   assert.match(sources, /Annual NLCD Collection 1.2, 2025 land cover/);
   assert.match(sources, /Provider access is blocked/);
   assert.match(sources, /Hydric-soil information is soil information/);
-
-  const activity = renderScreeningReport(report, "activity");
-  assert.match(activity, /Technical provenance/);
-  assert.match(activity, /dc-smoke-parent-run/);
-  assert.match(activity, /recorded-nlcd-snapshot/);
-  assert.match(activity, /Open operations console/);
+  assert.match(sources, /Operations view/);
+  assert.match(sources, /recorded-nlcd-snapshot/);
+  assert.doesNotMatch(sources, /Activity \/ provenance/);
 });
 
 test("renders reports and export availability explicitly", () => {
