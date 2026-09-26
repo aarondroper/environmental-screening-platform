@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from environmental_screening_platform.local_api import LocalScreeningBridge, _lineage_issue
-from environmental_screening_platform.store import read_json
-from environmental_screening_platform.workflow import create_job, create_project_from_geojson
+import pytest
+
+from environmental_screening_platform.local_api import (
+    LocalScreeningBridge,
+    _lineage_issue,
+    _set_phase,
+)
+from environmental_screening_platform.store import read_json, write_json
+from environmental_screening_platform.workflow import (
+    create_job,
+    create_project_from_geojson,
+    run_job,
+    transition_job,
+)
 
 
 class ImmediateExecutor:
@@ -24,6 +36,21 @@ def _aoi() -> dict[str, Any]:
                 [-77.03, 38.90],
                 [-77.04, 38.90],
                 [-77.04, 38.89],
+            ]
+        ],
+    }
+
+
+def _colorado_aoi() -> dict[str, Any]:
+    return {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [-105.10, 40.00],
+                [-105.09, 40.00],
+                [-105.09, 40.01],
+                [-105.10, 40.01],
+                [-105.10, 40.00],
             ]
         ],
     }
@@ -67,6 +94,14 @@ def _result(geometry_hash: str) -> dict[str, Any]:
     }
 
 
+def _complete_fake_job(data_root: Path, job_id: str) -> None:
+    path = data_root / "workspace" / "jobs" / job_id / "job.json"
+    job = read_json(path)
+    job["status"] = transition_job(job["status"], "processing")
+    job["status"] = transition_job(job["status"], "completed")
+    write_json(path, job)
+
+
 def test_successful_local_run_returns_exact_aoi_and_source_lineage(tmp_path: Path) -> None:
     def fake_run(job_id: str, data_root: Path, **_: Any) -> dict[str, Any]:
         from environmental_screening_platform.store import read_json
@@ -83,6 +118,7 @@ def test_successful_local_run_returns_exact_aoi_and_source_lineage(tmp_path: Pat
         result = _result(revision["geometry_sha256"])
         result["project_id"] = job["project_id"]
         result["aoi_id"] = job["aoi_id"]
+        _complete_fake_job(data_root, job_id)
         return result
 
     bridge = LocalScreeningBridge(tmp_path, executor=ImmediateExecutor())
@@ -129,11 +165,23 @@ def test_successful_local_run_returns_exact_aoi_and_source_lineage(tmp_path: Pat
         ),
         patch("environmental_screening_platform.local_api.run_job", side_effect=fake_run),
     ):
-        created = bridge.submit(project_name="DC test", geojson=_aoi())
+        created = bridge.submit(project_name="Colorado test", geojson=_colorado_aoi())
         assert created["status"] == "succeeded"
+        assert created["job"]["status"] == "completed"
         assert created["report"]["aoi_context"]["geometry_sha256"] == created["aoi_geometry_sha256"]
         assert created["report"]["sources"]["annual_nlcd"]["screening"]
         assert created["report"]["sources"]["3dep"]["status_only_reason"]
+        assert created["report"]["browser_previews"] == {}
+        assert created["report"]["screening_run"]["aoi_revision"] == 1
+        assert created["report"]["result"]["aoi_revision"] == 1
+        source_result = created["report"]["result"]["source_results"][0]
+        assert source_result["aoi_geometry_sha256"] == created["aoi_geometry_sha256"]
+        assert source_result["source_snapshot_id"] == "snapshot-nlcd"
+        assert source_result["source_version_id"] == "version-nlcd"
+        assert source_result["candidate_id"] == "candidate-nlcd"
+        assert source_result["ingestion_run_id"] == "run-nlcd"
+        assert source_result["provenance"]["sha256"] == "checksum-nlcd"
+        assert "-77.04" not in json.dumps(created["report"], sort_keys=True)
 
 
 def test_failed_acquisition_can_retry_without_replacing_the_aoi(tmp_path: Path) -> None:
@@ -165,6 +213,7 @@ def test_failed_acquisition_can_retry_without_replacing_the_aoi(tmp_path: Path) 
                 "aoi_id": job["aoi_id"],
             }
         )
+        _complete_fake_job(data_root, job_id)
         return result
 
     bridge = LocalScreeningBridge(tmp_path, executor=ImmediateExecutor())
@@ -213,9 +262,11 @@ def test_failed_acquisition_can_retry_without_replacing_the_aoi(tmp_path: Path) 
     ):
         first = bridge.submit(project_name="retry test", geojson=_aoi())
         assert first["status"] == "failed"
+        assert first["job"]["status"] == "failed"
         retried = bridge.retry(first["job_id"])
 
     assert retried["status"] == "succeeded"
+    assert retried["job"]["status"] == "completed"
     assert retried["job"]["bridge"]["attempt"] == 2
     assert retried["report"]["screening_run"]["aoi_revision"] == 1
 
@@ -250,3 +301,28 @@ def test_stale_result_is_hidden_when_geometry_lineage_changes(tmp_path: Path) ->
     assert _lineage_issue(tmp_path, job, result, result["source_results"][0], revision) == (
         "Stored result geometry hash does not match the immutable AOI revision"
     )
+
+
+def test_bridge_phases_do_not_duplicate_workflow_processing_transition(tmp_path: Path) -> None:
+    created = create_project_from_geojson("generic lifecycle", _colorado_aoi(), tmp_path)
+    job = create_job(
+        created["project"]["project_id"],
+        tmp_path,
+        created["aoi_revision"]["aoi_id"],
+        source_ids=("annual_nlcd",),
+        screening_mode="active_aoi",
+        require_aoi_scoped_active=True,
+    )
+
+    _set_phase(tmp_path, job["job_id"], "screening")
+    assert read_json(tmp_path / "workspace" / "jobs" / job["job_id"] / "job.json")["status"] == (
+        "queued"
+    )
+    result = run_job(job["job_id"], tmp_path)
+
+    assert result["job_status"] == "completed"
+    assert read_json(tmp_path / "workspace" / "jobs" / job["job_id"] / "job.json")["status"] == (
+        "completed"
+    )
+    with pytest.raises(ValueError, match="processing -> processing"):
+        transition_job("processing", "processing")

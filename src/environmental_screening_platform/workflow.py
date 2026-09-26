@@ -84,6 +84,45 @@ def transition_job(current: str, target: str) -> str:
     return target
 
 
+def fail_job(job_id: str, data_root: Path, error: str) -> dict[str, Any]:
+    """Record a failed attempt using the canonical job state machine.
+
+    Acquisition and promotion happen before :func:`run_job` owns the processing
+    transition. Those pre-processing failures therefore use the same strict
+    state machine rather than assigning ``failed`` directly. A completed job
+    is left untouched because its result is immutable.
+    """
+    data_root = _ensure_external_data_root(data_root)
+    job_path = _repository_paths(data_root)["jobs"] / job_id / "job.json"
+    job = read_json(job_path)
+    if job["status"] == JobStatus.COMPLETED.value:
+        return job
+    if job["status"] == JobStatus.QUEUED.value:
+        job["status"] = transition_job(job["status"], JobStatus.PROCESSING.value)
+    if job["status"] == JobStatus.PROCESSING.value:
+        job["status"] = transition_job(job["status"], JobStatus.FAILED.value)
+    if job["status"] != JobStatus.FAILED.value:
+        raise ValueError(f"Cannot fail job from state {job['status']}")
+    job["updated_at"] = utc_now()
+    job["error"] = error
+    write_json(job_path, job)
+    return job
+
+
+def queue_failed_job(job_id: str, data_root: Path) -> dict[str, Any]:
+    """Move a failed job back to queued for a strict, snapshot-pinned retry."""
+    data_root = _ensure_external_data_root(data_root)
+    job_path = _repository_paths(data_root)["jobs"] / job_id / "job.json"
+    job = read_json(job_path)
+    if job["status"] != JobStatus.FAILED.value:
+        raise ValueError("Only failed jobs can be retried; completed jobs are immutable")
+    job["status"] = transition_job(job["status"], JobStatus.QUEUED.value)
+    job["updated_at"] = utc_now()
+    job["error"] = None
+    write_json(job_path, job)
+    return job
+
+
 def _repository_paths(data_root: Path) -> dict[str, Path]:
     return {
         "projects": data_root / "workspace" / "projects",
@@ -948,12 +987,7 @@ def retry_job(
     spatial_repository: SpatialRepository | None = None,
 ) -> dict[str, Any]:
     data_root = _ensure_external_data_root(data_root)
-    job = read_json(_repository_paths(data_root)["jobs"] / job_id / "job.json")
-    if job["status"] != JobStatus.FAILED.value:
-        raise ValueError("Only failed jobs can be retried; completed jobs are immutable")
-    job["status"] = transition_job(job["status"], JobStatus.QUEUED.value)
-    job["updated_at"] = utc_now()
-    write_json(_repository_paths(data_root)["jobs"] / job_id / "job.json", job)
+    queue_failed_job(job_id, data_root)
     return run_job(job_id, data_root, spatial_repository=spatial_repository)
 
 

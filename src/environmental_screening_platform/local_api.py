@@ -24,6 +24,8 @@ from .workflow import (
     bind_job_snapshots,
     create_job,
     create_project_from_geojson,
+    fail_job,
+    queue_failed_job,
     run_job,
 )
 
@@ -69,8 +71,6 @@ def _set_phase(data_root: Path, job_id: str, phase: str, **updates: Any) -> dict
     job = read_json(_job_path(data_root, job_id))
     bridge = dict(job.get("bridge") or {})
     bridge.update({"status": "running", "phase": phase, **updates})
-    if job["status"] == "queued":
-        job["status"] = "processing"
     job["bridge"] = bridge
     write_json(_job_path(data_root, job_id), job)
     return job
@@ -307,15 +307,11 @@ class LocalScreeningBridge:
         return self.status(job["job_id"])
 
     def retry(self, job_id: str) -> dict[str, Any]:
-        job = read_json(_job_path(self.data_root, job_id))
-        if job.get("status") != "failed":
-            raise ValueError("Only failed local screening jobs can be retried")
+        job = queue_failed_job(job_id, self.data_root)
         bridge = dict(job.get("bridge") or {})
         bridge["status"] = "queued"
         bridge["phase"] = "queued"
         bridge["attempt"] = int(bridge.get("attempt", 1)) + 1
-        job["status"] = "queued"
-        job["error"] = None
         job["bridge"] = bridge
         write_json(_job_path(self.data_root, job_id), job)
         self._executor.submit(self._execute, job_id)
@@ -379,7 +375,6 @@ class LocalScreeningBridge:
             result["local_bridge"] = report["screening_run"]
             write_json(self.data_root / "workspace" / "jobs" / job_id / "result.json", result)
             job = read_json(_job_path(self.data_root, job_id))
-            job["status"] = "completed"
             job["bridge"] = {
                 **dict(job.get("bridge") or {}),
                 "status": "succeeded",
@@ -396,9 +391,8 @@ class LocalScreeningBridge:
             write_json(_job_path(self.data_root, job_id), job)
         except Exception as exc:
             reason = f"{type(exc).__name__}: {exc}"
+            fail_job(job_id, self.data_root, reason)
             job = read_json(_job_path(self.data_root, job_id))
-            job["status"] = "failed"
-            job["error"] = reason
             job["bridge"] = {
                 **dict(job.get("bridge") or {}),
                 "status": "failed",
