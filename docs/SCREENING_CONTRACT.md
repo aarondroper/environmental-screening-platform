@@ -165,6 +165,18 @@ class counts/percentages, coverage, native raster metadata, and source year.
 metadata, and declared units/datum where available. Retry reuses the same
 immutable snapshots and a later promotion affects only a newly created job.
 
+The read-only `report-aoi-run` workflow accepts a persisted project, AOI, and
+immutable revision and projects the existing control-plane and file-backed
+records into one operational report. It includes the AOI policy/area/hash,
+deterministic parent plans, child acquisition attempts and retries, artifact
+counts/bytes/checksums, source versions, validation and candidate states,
+promotion decisions, AOI-scoped active pointers, screening jobs/snapshots,
+results, timestamps, warnings, and failure reasons. The JSON report preserves
+independent source states and a per-source lifecycle stopping point; its
+terminal summary is only a presentation of that same evidence. It does not
+mutate records, acquire data, infer missing coverage, or create a parallel
+state system.
+
 ## 7. Asynchronous job states and failure semantics
 
 The target request path validates input and references, pins AOI/source versions, creates a job, and returns promptly. The Milestone 2B CLI currently creates a file-backed job and invokes the local worker synchronously (job-oriented, not a separate asynchronous queue service). It transitions `queued → processing → completed` or `queued/processing → failed`.

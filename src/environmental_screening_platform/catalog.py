@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import quote
 from uuid import uuid4
 
 from .adapters import NLCD_CLASSES, NLCD_NATIVE_CRS, NLCD_NATIVE_NODATA, NLCD_NATIVE_RESOLUTION_M
@@ -149,6 +150,18 @@ class SourceRepository(Protocol):
 
     def get_aoi_ingestion_run(self, parent_run_id: str) -> dict[str, Any] | None: ...
 
+    def list_aoi_ingestion_runs(
+        self, *, project_id: str, aoi_id: str, aoi_revision: int
+    ) -> list[dict[str, Any]]: ...
+
+    def list_promotion_decisions(
+        self, *, candidate_ids: list[str] | None = None
+    ) -> list[dict[str, Any]]: ...
+
+    def list_active_aoi_versions(
+        self, *, project_id: str, aoi_id: str, aoi_revision: int
+    ) -> list[dict[str, Any]]: ...
+
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
@@ -161,17 +174,26 @@ def _decode(row: sqlite3.Row | None) -> dict[str, Any] | None:
 class SQLiteSourceRepository:
     """SQLite catalog persisted under an external data directory."""
 
-    def __init__(self, data_root: Path):
+    def __init__(self, data_root: Path, *, read_only: bool = False):
         self.data_root = data_root.resolve()
         repository_root = Path(__file__).resolve().parents[2]
         if self.data_root == repository_root or repository_root in self.data_root.parents:
             raise ValueError("Source catalog must be stored outside the project repository")
         self.path = self.data_root / "catalog" / "sources.sqlite3"
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        self._read_only = read_only
+        if read_only:
+            if not self.path.exists():
+                raise FileNotFoundError(f"Source catalog does not exist: {self.path}")
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+        if self._read_only:
+            uri = f"file:{quote(str(self.path), safe='/')}?mode=ro"
+            connection = sqlite3.connect(uri, uri=True, timeout=30, isolation_level=None)
+        else:
+            connection = sqlite3.connect(self.path, timeout=30, isolation_level=None)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout=30000")
@@ -440,6 +462,10 @@ class SQLiteSourceRepository:
                 "SELECT * FROM aoi_ingestion_runs WHERE parent_run_id=?",
                 (parent_run_id,),
             ).fetchone()
+        return self._decode_aoi_ingestion_row(row)
+
+    @staticmethod
+    def _decode_aoi_ingestion_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
         result = _decode(row)
         if result is None:
             return None
@@ -447,6 +473,18 @@ class SQLiteSourceRepository:
         result["limits"] = json.loads(result.pop("limits_json"))
         result["summary"] = json.loads(result.pop("summary_json"))
         return result
+
+    def list_aoi_ingestion_runs(
+        self, *, project_id: str, aoi_id: str, aoi_revision: int
+    ) -> list[dict[str, Any]]:
+        with self._database() as db:
+            rows = db.execute(
+                """SELECT * FROM aoi_ingestion_runs
+                   WHERE project_id=? AND aoi_id=? AND aoi_revision=?
+                   ORDER BY started_at, parent_run_id""",
+                (project_id, aoi_id, aoi_revision),
+            ).fetchall()
+        return [decoded for row in rows if (decoded := self._decode_aoi_ingestion_row(row))]
 
     def begin_run(
         self,
@@ -923,6 +961,42 @@ class SQLiteSourceRepository:
         with self._database() as db:
             ids = [row[0] for row in db.execute(query, params).fetchall()]
             return [candidate for item in ids if (candidate := self._candidate(item, db))]
+
+    def list_promotion_decisions(
+        self, *, candidate_ids: list[str] | None = None
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM promotion_decisions"
+        params: tuple[Any, ...] = ()
+        if candidate_ids is not None:
+            if not candidate_ids:
+                return []
+            placeholders = ",".join("?" for _ in candidate_ids)
+            query += f" WHERE candidate_id IN ({placeholders})"
+            params = tuple(candidate_ids)
+        query += " ORDER BY decided_at, decision_id"
+        with self._database() as db:
+            result: list[dict[str, Any]] = []
+            for row in db.execute(query, params).fetchall():
+                decoded = _decode(row)
+                if decoded is not None:
+                    result.append(decoded)
+            return result
+
+    def list_active_aoi_versions(
+        self, *, project_id: str, aoi_id: str, aoi_revision: int
+    ) -> list[dict[str, Any]]:
+        with self._database() as db:
+            rows = db.execute(
+                """SELECT a.source_id,a.project_id,a.aoi_id,a.aoi_revision,
+                          a.aoi_geometry_sha256,a.candidate_id,a.version_id,a.promoted_at,
+                          v.provider,v.provider_release,v.source_url,v.retrieved_at,v.media_type,
+                          v.sha256,v.byte_size,v.artifact_path,v.terms_url,v.adapter_version
+                   FROM active_aoi_versions a JOIN source_versions v USING(version_id)
+                   WHERE a.project_id=? AND a.aoi_id=? AND a.aoi_revision=?
+                   ORDER BY a.source_id""",
+                (project_id, aoi_id, aoi_revision),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_active(
         self,

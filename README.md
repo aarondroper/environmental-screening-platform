@@ -139,6 +139,23 @@ coverage/nodata states. Retrying a failed job reuses the original snapshots;
 promoting a later version requires a new job. NLCD and 3DEP remain independent
 descriptive metrics; no composite or regulatory conclusion is produced.
 
+For a read-only lifecycle report covering one persisted project and immutable
+AOI revision, use:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" report-aoi-run \
+  --project-id PROJECT_ID --aoi-id AOI_ID --aoi-revision 1
+```
+
+The default output is deterministic JSON containing the AOI identity and area,
+parent plans/runs, child acquisition attempts and retries, artifact counts and
+checksums, source versions, candidates, validation outcomes, promotion
+decisions, active AOI-scoped versions, screening jobs/snapshots/results, and
+independent source lifecycle states. Use `--format summary` for a concise
+terminal view. The report is read-only, works for generic AOIs, performs no
+provider access, and keeps unknown/unavailable/incomplete/nodata/quarantined
+states distinct from no constraint observed.
+
 The SSURGO command creates a single-source `ssurgo_fixture_only` job. It reports exact snapshot/version provenance, fixture-only status, covered/uncovered AOI area, map-unit/component metrics, and hydric-soil attributes. It never selects latest data or claims regional SSURGO coverage. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. Active regional canonical environmental layers and regional tiling are not implemented.
 
 Source ingestion is separately available as a candidate-first operator workflow. For example:

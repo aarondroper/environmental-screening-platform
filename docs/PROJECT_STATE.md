@@ -137,3 +137,11 @@ The external manifest records both successful artifacts, the retained failed NLC
 **Verified scope:** NLCD results include valid/nodata pixels, class counts/percentages, coverage, native raster metadata, and source year. 3DEP results include valid/nodata cells, elevation summaries, coverage, native raster metadata, and declared units/datum when present. JSON, CSV, and GeoJSON preserve project/AOI/geometry-hash, snapshot, active-version/source-version, candidate/run, checksum, and provenance fields. Missing or unpromoted sources remain explicit incomplete/unknown states; retries reuse original snapshots and later promotion affects only new jobs. Large native rasters are window-read to the AOI without fabricating pixel geometries.
 
 **Explicit limits:** This slice does not alter fixture-only commands or Northern Colorado aliases and does not consume SSURGO, PAD-US, or FEMA. Raster source maturity and production readiness remain bounded by prior validation scopes; no composite, safety, suitability, or regulatory conclusion is produced.
+
+## Milestone 2B.20 — Read-only AOI operational run report
+
+**Status:** Implemented with deterministic local lifecycle fixtures. The `report-aoi-run` command accepts any persisted project/AOI/revision and projects existing SQLite catalog records plus file-backed screening jobs into machine-readable JSON or a concise terminal summary.
+
+**Verified scope:** The report preserves AOI policy/area/geometry hash, deterministic parent plans, selected sources, child acquisition attempts and retry lineage, planned/acquired counts, bytes, checksums, source versions, validation/candidate/promotion states, active AOI-scoped versions, screening jobs and immutable snapshots, source outcomes, timestamps, warnings, and failure reasons. Each source has an independent lifecycle stopping point and explicit failed, incomplete, unavailable, unknown, quarantined, blocked, or rejected details where present. The projection is read-only and uses no provider access or parallel persistence model.
+
+**Explicit limits:** This is an operational evidence report, not a new screening or source-validation workflow. It does not change source maturity, acquire data, promote candidates, alter screening semantics, or provide an overall suitability conclusion.

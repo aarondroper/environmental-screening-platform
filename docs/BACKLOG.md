@@ -49,6 +49,16 @@ provenance in all exports.
 and FEMA are not consumed or promoted by this slice, and source maturity and
 regional production readiness remain unresolved.
 
+## Milestone 2B.20 — Read-only AOI operational run report
+
+**Status:** Implemented. `report-aoi-run` projects the existing catalog,
+deterministic acquisition plans, and file-backed screening records for one
+immutable project/AOI revision into JSON or a concise terminal summary.
+
+**Remaining boundary:** The report is evidence-only. It does not acquire,
+promote, screen, alter source maturity, or replace a future API/operations
+surface.
+
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite

@@ -25,6 +25,7 @@ from .ingestion import (
     ingest_ssurgo_regional_packages,
     retry_ingestion,
 )
+from .report import build_aoi_run_report, render_aoi_run_summary
 from .spatial import PostGISRepository, PostGISUnavailable, census_boundary_record
 from .ssurgo import parse_ssurgo_fixture
 from .ssurgo_aoi import ingest_ssurgo_aoi
@@ -123,6 +124,21 @@ def _parser() -> argparse.ArgumentParser:
         choices=("nlcd", "3dep"),
         required=True,
         help="AOI-scoped active sources to screen",
+    )
+
+    report_run = sub.add_parser(
+        "report-aoi-run",
+        help="Report the read-only ingestion and screening lifecycle for one AOI revision",
+    )
+    report_run.add_argument("--project-id", required=True)
+    report_run.add_argument("--aoi-id", required=True)
+    report_run.add_argument("--aoi-revision", type=int, required=True)
+    report_run.add_argument(
+        "--format",
+        dest="output_format",
+        choices=("json", "summary"),
+        default="json",
+        help="Output format; JSON is machine-readable and summary is terminal-oriented",
     )
 
     fixtures_submit = sub.add_parser(
@@ -401,6 +417,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         result = run_job(job["job_id"], args.data_dir)
         outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
+    elif args.command == "report-aoi-run":
+        outcome = build_aoi_run_report(
+            args.data_dir,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+            aoi_revision=args.aoi_revision,
+        )
     elif args.command == "screen-fixtures":
         job = create_job(
             args.project_id,
@@ -571,7 +594,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
     else:  # pragma: no cover - argparse prevents this branch
         raise AssertionError(args.command)
-    print(json.dumps(outcome, indent=2, sort_keys=True, default=str))
+    if args.command == "report-aoi-run" and args.output_format == "summary":
+        print(render_aoi_run_summary(outcome))
+    else:
+        print(json.dumps(outcome, indent=2, sort_keys=True, default=str))
     return 0
 
 

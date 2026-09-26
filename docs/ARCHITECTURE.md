@@ -215,6 +215,16 @@ pointer/source-version/candidate/run/checksum lineage, and emits only a
 meaningful 3DEP footprint when available. Fixture modes use the same processors
 with their existing `fixture_only` labels.
 
+`report-aoi-run` is a read-only operational projection over the same SQLite
+control-plane catalog and file-backed job records. It validates the requested
+project/AOI/revision identity, reads deterministic parent plans, joins child
+runs/attempts/candidates/source versions/promotions/active pointers, and loads
+matching screening jobs and immutable snapshots from the external data root.
+It returns both complete raw lifecycle records and a per-source lifecycle
+section; it never writes a report record, refreshes an active pointer, or
+collapses unknown, unavailable, incomplete, nodata, pending, quarantined, or
+rejected states into success or absence.
+
 When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 
 ## Processing pipelines

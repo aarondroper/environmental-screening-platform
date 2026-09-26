@@ -41,6 +41,8 @@ For AOI-scoped raster promotion, run `pytest tests/test_aoi_raster_promotion.py`
 
 For snapshot-pinned active raster screening, run `pytest tests/test_active_screening.py` and inspect `screening screen-active --help`. Confirm that only the exact AOI-scoped active NLCD/3DEP pointers are snapshotted and processed, missing/unpromoted states remain explicit, native raster windows/metadata and nodata accounting are preserved, retry reuses the original snapshots, later promotion affects only a new job, and JSON/CSV/GeoJSON retain AOI and source lineage. The retained Washington, DC smoke is opt-in via `ESGP_RUN_LIVE_SMOKE=1`; it performs no network acquisition.
 
+For the read-only AOI operational report, run `pytest tests/test_aoi_run_report.py` and inspect `screening report-aoi-run --help`. Confirm that a persisted project/AOI/revision report includes exact geometry/policy/area identity, deterministic plans, child attempts/retries, artifacts/checksums/source versions, candidates, validation outcomes, promotions, active AOI pointers, screening jobs/snapshots/results, and independent per-source lifecycle states. Confirm JSON is deterministic, `--format summary` is concise, no provider is contacted, and no unknown or failed state is collapsed into overall success.
+
 ## Evidence and scope gate
 
 - Inspect the actual repository, git status, relevant code, tests, configuration, and executable behavior before changing or claiming anything.
