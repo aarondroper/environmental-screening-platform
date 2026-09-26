@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import numpy as np
 import pytest
+import rasterio
+from pyproj import Transformer
+from rasterio.transform import from_bounds
+from shapely.geometry import shape
+from shapely.ops import transform
 
 from environmental_screening_platform.local_api import (
     LocalScreeningBridge,
+    _generate_nlcd_browser_preview,
     _lineage_issue,
     _set_phase,
 )
@@ -56,6 +64,29 @@ def _colorado_aoi() -> dict[str, Any]:
     }
 
 
+def _write_nlcd_artifact(path: Path, geometry: dict[str, Any]) -> str:
+    aoi = shape(geometry)
+    to_source = Transformer.from_crs("EPSG:4326", "EPSG:5070", always_xy=True).transform
+    minx, miny, maxx, maxy = transform(to_source, aoi).bounds
+    bounds = (minx - 1_000, miny - 1_000, maxx + 1_000, maxy + 1_000)
+    values = np.full((8, 8), 24, dtype="uint8")
+    values[0, 0] = 250
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=8,
+        height=8,
+        count=1,
+        dtype="uint8",
+        crs="EPSG:5070",
+        transform=from_bounds(*bounds, 8, 8),
+        nodata=250,
+    ) as dataset:
+        dataset.write(values, 1)
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _candidate() -> dict[str, Any]:
     return {
         "candidate_id": "candidate-nlcd",
@@ -92,6 +123,59 @@ def _result(geometry_hash: str) -> dict[str, Any]:
             }
         ],
     }
+
+
+def test_successful_job_generates_an_aoi_specific_nlcd_preview(tmp_path: Path) -> None:
+    created = create_project_from_geojson("Generic preview test", _aoi(), tmp_path)
+    project = created["project"]
+    revision = created["aoi_revision"]
+    job = create_job(
+        project["project_id"],
+        tmp_path,
+        revision["aoi_id"],
+        source_ids=("annual_nlcd",),
+        screening_mode="active_aoi",
+        defer_source_snapshot=True,
+    )
+    source = tmp_path / "source.tif"
+    checksum = _write_nlcd_artifact(source, revision["geometry"])
+    result = {
+        "source_results": [
+            {
+                "source_id": "annual_nlcd",
+                "source_snapshot_id": "snapshot-generic",
+                "source_version_id": "version-generic",
+                "candidate_id": "candidate-generic",
+                "ingestion_run_id": "run-generic",
+                "metrics": {"source_year": 2025},
+                "provenance": {
+                    "artifact_path": str(source),
+                    "sha256": checksum,
+                    "source_url": "https://example.invalid/nlcd",
+                    "provider_release": "Annual NLCD Collection 1.2",
+                },
+            }
+        ]
+    }
+    preview = _generate_nlcd_browser_preview(tmp_path, job, result)
+    metadata = json.loads(
+        (
+            tmp_path
+            / "workspace"
+            / "jobs"
+            / job["job_id"]
+            / "browser-previews"
+            / "annual-nlcd-preview.json"
+        ).read_text()
+    )
+    assert preview["status"] == "available"
+    assert preview["source_sha256"] == checksum
+    assert preview["aoi_revision"] == revision["revision"]
+    assert preview["aoi_geometry_sha256"] == revision["geometry_sha256"]
+    assert metadata["source"]["source_snapshot_id"] == "snapshot-generic"
+    assert metadata["source"]["source_version_id"] == "version-generic"
+    assert metadata["source"]["sha256"] == checksum
+    assert metadata["aoi"]["geometry_sha256"] == revision["geometry_sha256"]
 
 
 def _complete_fake_job(data_root: Path, job_id: str) -> None:

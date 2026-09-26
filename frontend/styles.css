@@ -434,8 +434,28 @@ footer a { color: var(--accent); font-weight: 700; }
 .workspace-aoi-details dd { margin: 0; overflow-wrap: anywhere; }
 .workspace-aoi-details code { font-size: .59rem; }
 .layer-state-not_evaluated { color: var(--warning); background: var(--warning-soft); }
+.nlcd-observed-summary { margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line); }
+.nlcd-observed-summary > strong { color: var(--ink); font-size: .68rem; }
+.nlcd-observed-summary > small { display: block; margin-top: 6px; color: var(--muted); font-size: .59rem; line-height: 1.3; }
+.nlcd-class-summary { display: grid; gap: 6px; margin: 7px 0 0; padding: 0; list-style: none; }
+.nlcd-class-row { display: grid; grid-template-columns: minmax(104px, 1fr) minmax(42px, .8fr) auto; align-items: center; gap: 7px; }
+.nlcd-class-name strong, .nlcd-class-name small { display: block; }
+.nlcd-class-name strong { color: var(--ink); font-size: .64rem; }
+.nlcd-class-name small { margin-top: 1px; color: var(--muted); font-size: .55rem; }
+.nlcd-class-bar { height: 5px; overflow: hidden; border-radius: 5px; background: #e8eeeb; }
+.nlcd-class-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.nlcd-class-value { color: var(--muted); font-size: .58rem; white-space: nowrap; }
+.map-identify { display: block; margin-top: 4px; color: var(--muted); font-size: .62rem; }
+.map-identify-observed { color: var(--accent); font-weight: 700; }
+.map-identify-nodata, .map-identify-outside_coverage, .map-identify-outside_aoi, .map-identify-unavailable { color: #8b5c19; }
+.workspace-secondary-sources { margin-top: 8px; border-top: 1px solid var(--line); }
+.workspace-secondary-sources > summary { padding: 8px 2px; color: var(--ink); font-size: .68rem; font-weight: 750; cursor: pointer; }
+.workspace-secondary-sources > summary span { color: var(--muted); font-weight: 500; }
+.workspace-secondary-sources .workspace-source-list { border-top: 1px solid #edf1ef; }
 @media (max-width: 620px) {
   .workspace-aoi-loader { position: static; }
   .workspace-aoi-form { position: fixed; top: 66px; right: 8px; left: 8px; width: auto; }
   .workspace-aoi-details dl { grid-template-columns: 1fr; gap: 2px; }
+  .nlcd-class-row { grid-template-columns: minmax(100px, 1fr) auto; }
+  .nlcd-class-bar { grid-column: 1 / -1; grid-row: 2; }
 }

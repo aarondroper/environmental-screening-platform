@@ -76,6 +76,27 @@ const formatNumber = (value, digits = 2) => {
   return Number.isFinite(number) ? number.toLocaleString(undefined, { maximumFractionDigits: digits }) : String(value);
 };
 
+export const humanizeNlcdClassName = (value) => String(value || "Unknown class")
+  .replaceAll("_", " ")
+  .replace(/\b\w/g, (character) => character.toUpperCase());
+
+const nlcdClassSummary = (metrics) => {
+  const classes = Object.entries(metrics.classes || {}).map(([code, item]) => ({ ...item, class_value: item.class_value || code })).sort((left, right) => (
+    Number(right.pixel_count || 0) - Number(left.pixel_count || 0)
+  ));
+  const validPixels = Number(metrics.valid_pixel_count || 0);
+  const resolution = metrics.raster?.resolution || [];
+  const cellArea = Number(resolution[0]) * Number(resolution[1]);
+  if (!classes.length) return `<p class="muted">No observed NLCD classes in valid pixels.</p>`;
+  const rows = classes.map((item) => {
+    const pixels = Number(item.pixel_count || 0);
+    const percentage = item.percentage_of_valid_pixels ?? (validPixels ? (pixels / validPixels) * 100 : null);
+    const area = item.estimated_area_sqm ?? (Number.isFinite(cellArea) ? pixels * cellArea : null);
+    return `<li class="nlcd-class-row"><span class="nlcd-class-name"><strong>${escapeHtml(humanizeNlcdClassName(item.class_name || item.class_label))}</strong><small>NLCD ${escapeHtml(item.class_value || "")}</small></span><span class="nlcd-class-bar" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, Number(percentage || 0)))}%"></i></span><span class="nlcd-class-value">${escapeHtml(formatNumber(area))} m² · ${escapeHtml(formatNumber(percentage))}%</span></li>`;
+  }).join("");
+  return `<div class="nlcd-observed-summary"><strong>Observed land cover</strong><ul class="nlcd-class-summary">${rows}</ul><small>Annual NLCD observations only; these classes are not suitability or regulatory conclusions.</small></div>`;
+};
+
 const lifecycleState = (source = {}) => {
   const lifecycle = source.lifecycle || {};
   for (const state of ["not_evaluated", "blocked", "unavailable", "incomplete", "failed", "unknown", "quarantined"]) {
@@ -144,7 +165,7 @@ const valueList = (items) => items.length ? items.map((item) => `<code>${escapeH
 const sourceMetrics = (row) => {
   if (row.notEvaluated) return `<div class="metric"><dt>Evaluation</dt><dd>Not evaluated for this AOI</dd></div>`;
   const metrics = row.result?.metrics || row.source.candidates?.at(-1)?.validation?.metrics || {};
-  const coverage = metrics.coverage || {};
+  const coverage = metrics.coverage || metrics;
   const pixels = metrics.pixel_accounting || {};
   const fields = [];
   if (row.id === "annual_nlcd") {
@@ -216,14 +237,13 @@ const screeningMetric = (label, value) => `<div class="screening-metric"><dt>${e
 const screeningMetrics = (row) => {
   if (row.notEvaluated) return [screeningMetric("Evaluation", "Not evaluated for this AOI")];
   const metrics = row.result?.metrics || {};
-  const coverage = metrics.coverage || {};
+  const coverage = metrics.coverage || metrics;
   if (row.id === "annual_nlcd" && row.result) {
-    const classes = Object.values(metrics.classes || {}).map((item) => `${item.class_name || "class"}: ${formatNumber(item.pixel_count, 0)}`).join(" · ");
     return [
       screeningMetric("AOI coverage", `${formatNumber(coverage.covered_aoi_percentage)}% covered`),
       screeningMetric("Valid pixels", formatNumber(metrics.valid_pixel_count, 0)),
       screeningMetric("Nodata pixels", formatNumber(metrics.nodata_pixel_count, 0)),
-      screeningMetric("Observed classes", classes || "—"),
+      nlcdClassSummary(metrics),
     ];
   }
   if (row.id === "3dep" && row.result) {
@@ -329,7 +349,7 @@ const layerState = (row, previews = {}) => {
 const workspaceMetricSummary = (row) => {
   if (row.notEvaluated) return "Not evaluated for this AOI";
   const metrics = row.result?.metrics || {};
-  const coverage = metrics.coverage || {};
+  const coverage = metrics.coverage || metrics;
   if (row.id === "annual_nlcd" && row.result) return `${formatNumber(coverage.covered_aoi_percentage)}% AOI · ${formatNumber(metrics.valid_pixel_count, 0)} valid pixels`;
   if (row.id === "3dep" && row.result) return `${formatNumber(coverage.covered_aoi_percentage)}% AOI · mean ${formatNumber(metrics.mean_elevation)} ${metrics.elevation_units || "units"}`;
   if (row.id === "ssurgo") return "Coverage incomplete · rejected candidate";
@@ -338,9 +358,9 @@ const workspaceMetricSummary = (row) => {
   return "No source-specific metric recorded";
 };
 
-const workspaceSourceRow = (row, previews = {}) => {
+const workspaceSourceRow = (row, previews = {}, open = false) => {
   const layer = layerState(row, previews);
-  return `<details class="workspace-source" data-screening-source="${escapeHtml(row.id)}">
+  return `<details class="workspace-source" data-screening-source="${escapeHtml(row.id)}"${open ? " open" : ""}>
     <summary class="workspace-source-summary"><span class="workspace-source-name"><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.id)}</small></span><span class="workspace-source-teaser">${escapeHtml(workspaceMetricSummary(row))}</span><span class="status-stack">${screeningStatus(row)}</span></summary>
     <div class="workspace-source-detail"><div class="workspace-source-state"><span class="layer-state layer-state-${escapeHtml(layer.state)}">${escapeHtml(layer.label)}</span><span>${escapeHtml(layer.detail)}</span></div><dl class="workspace-metrics">${screeningMetrics(row).join("")}</dl><p>${escapeHtml(row.result ? (row.result.observation_status === "data_observed" ? "Observed in the recorded AOI result." : row.result.observation_status) : row.source.status_only_reason || "No source-specific screening result was recorded.")}</p><a class="workspace-secondary-link" href="?tab=sources">View source details and provenance</a><p class="muted">${escapeHtml(row.id === "ssurgo" ? "Hydric-soil information; not a wetlands inventory or regulatory determination." : row.id === "fema_nfhl" ? "Unmapped or unavailable FEMA areas remain unknown, not hazard-free." : row.id === "padus" ? "No PAD-US geometry is rendered because the source remains conditional/quarantined." : "No cross-source score or suitability conclusion is calculated.")}</p></div>
   </details>`;
@@ -352,7 +372,7 @@ const workspaceLayerControl = (rows, previews = {}) => {
   const nlcdAvailable = nlcdPreview?.status === "available";
   const terrainAvailable = terrainPreview?.status === "available";
   const visibleCount = 1 + [nlcdAvailable && nlcdPreview.default_visible !== false, terrainAvailable && terrainPreview.default_visible === true].filter(Boolean).length;
-  const nlcdLegend = nlcdAvailable && nlcdPreview.legend?.length ? `<div class="nlcd-legend" aria-label="Annual NLCD 2025 observed classes"><strong>NLCD observed classes</strong>${nlcdPreview.legend.map((item) => `<span><i style="background:${escapeHtml(item.color)}"></i><b>${escapeHtml(item.value)}</b> ${escapeHtml(item.label)}</span>`).join("")}</div>` : "";
+  const nlcdLegend = nlcdAvailable && nlcdPreview.legend?.length ? `<div class="nlcd-legend" aria-label="Annual NLCD 2025 observed classes"><strong>NLCD observed classes</strong>${nlcdPreview.legend.map((item) => `<span><i style="background:${escapeHtml(item.color)}"></i><b>${escapeHtml(item.value)}</b> ${escapeHtml(humanizeNlcdClassName(item.label))}</span>`).join("")}</div>` : "";
   const terrainLegend = terrainAvailable && terrainPreview.legend?.length ? `<div class="terrain-legend" aria-label="3DEP terrain preview explanation"><strong>3DEP relative hillshade</strong>${terrainPreview.legend.map((item) => `<span><i style="background:${escapeHtml(item.color)}"></i>${escapeHtml(item.label)}</span>`).join("")}<small>Illumination only; no elevation value, unit, or datum is displayed.</small></div>` : "";
   const nlcdLayer = nlcdAvailable
     ? `<div class="workspace-layer workspace-layer-active"><label class="workspace-layer-toggle"><input type="checkbox" ${nlcdPreview.default_visible !== false ? "checked" : ""} data-nlcd-visibility aria-label="Toggle Annual NLCD 2025 preview"><span class="layer-swatch nlcd-swatch"></span><span><strong>Annual NLCD 2025</strong><small data-nlcd-status>${nlcdPreview.default_visible !== false ? "Display preview · visible" : "Available · click to show"}</small></span></label><span class="layer-opacity"><span>Opacity</span><input id="nlcd-opacity" type="range" min="0.25" max="0.9" step="0.05" value="${escapeHtml(nlcdPreview.opacity_default ?? 0.58)}" data-nlcd-opacity aria-label="Annual NLCD preview opacity"></span><small class="layer-error" data-nlcd-error hidden></small></div>`
@@ -374,7 +394,11 @@ const workspaceTabs = (activeTab) => {
   return `<nav class="workspace-tabs" aria-label="Screening workspace sections">${tabs.map(([id, label]) => `<a class="workspace-tab ${activeTab === id ? "workspace-tab-active" : ""}" aria-current="${activeTab === id ? "page" : "false"}" href="?tab=${id}">${label}</a>`).join("")}</nav>`;
 };
 
-const workspaceResultsPanel = (rows, previews = {}) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source summary</p><h2>Independent findings</h2></div><span class="muted">No composite score</span></div><div class="workspace-source-list">${rows.map((row) => workspaceSourceRow(row, previews)).join("")}</div><details class="workspace-info"><summary>Interpretation limits</summary><p>Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.” No regulatory, safety, or suitability conclusion is produced.</p></details></div>`;
+const workspaceResultsPanel = (rows, previews = {}) => {
+  const primary = rows.find((row) => row.id === "annual_nlcd");
+  const secondary = rows.filter((row) => row.id !== "annual_nlcd");
+  return `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source summary</p><h2>Annual NLCD findings</h2></div><span class="muted">No composite score</span></div>${primary ? `<div class="workspace-primary-source">${workspaceSourceRow(primary, previews, true)}</div>` : ""}<details class="workspace-secondary-sources"><summary>Other source status <span>${secondary.length}</span></summary><div class="workspace-source-list">${secondary.map((row) => workspaceSourceRow(row, previews)).join("")}</div></details><details class="workspace-info"><summary>Interpretation limits</summary><p>These are source observations only. Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.” No regulatory, safety, or suitability conclusion is produced.</p></details></div>`;
+};
 
 const workspaceReportsPanel = (report = {}) => {
   const userAoi = report.aoi_context?.origin === "user_provided";
@@ -408,7 +432,7 @@ export const renderScreeningReport = (report = {}, requestedTab = "results") => 
   return `<div class="workspace-shell">
     <header class="workspace-header"><div class="workspace-header-project"><span class="workspace-mark">ES</span><div><h1>${escapeHtml(userAoi ? "User-provided environmental screening" : project.name || "Recorded environmental screening")}</h1><span>${area.value_sqkm === null || area.value_sqkm === undefined ? "Area not calculated in browser" : `${formatNumber(area.value_sqkm, 5)} km²`} · AOI revision ${escapeHtml(aoi.revision)} · ${escapeHtml(userAoi ? "local AOI session" : "recorded demonstration")}</span></div></div><div class="workspace-header-status"><span class="badge badge-${escapeHtml(run?.status || (userAoi ? "not_evaluated" : "partial"))}">${escapeHtml(statusLabel)}</span><span data-screening-status>${escapeHtml(statusDetail)}</span></div><div class="workspace-header-actions">${runAction}${loadAoiControl}${exportAction}<a class="workspace-tech-link" href="?view=operations">Technical view</a></div></header>
     ${workspaceTabs(activeTab)}
-    <main class="workspace-main"><section class="workspace-map-stage"><div class="workspace-map-toolbar"><div><strong>Area of interest</strong><span>WGS84 · ${escapeHtml(aoi.policy || "generic")}</span>${aoiDetails}</div><span class="workspace-map-status">${escapeHtml(userAoi ? (screenedCurrent ? "Loaded AOI · Annual NLCD screened" : "Loaded AOI · source results not evaluated") : "Recorded AOI boundary")}</span></div><div class="workspace-map-wrap">${renderAoiMap(aoi)}${workspaceLayerControl(rows, previews)}</div><div class="map-caption"><span>${escapeHtml(userAoi ? (screenedCurrent ? "Annual NLCD result is bound to this exact AOI revision; other sources remain not evaluated." : "Loaded AOI shown. Existing DC metrics and display previews are not reused.") : "Recorded AOI boundary and optional NLCD/3DEP display previews shown; source metrics remain independent.")}</span></div></section><aside class="workspace-sidebar"><div class="workspace-sidebar-head"><div><p class="eyebrow">${activeTab === "results" ? "Screening summary" : "Workspace view"}</p><h2>${escapeHtml(activeTab === "results" ? "Source findings" : activeTab === "reports" ? "Reports" : "Data sources")}</h2><span class="workspace-preliminary">${userAoi ? (screenedCurrent ? "AOI loaded · Annual NLCD screened" : "AOI loaded · screening not run") : "Preliminary screening · no composite score"}</span></div><span class="workspace-sidebar-count">${formatNumber(rows.length, 0)} sources</span></div>${tabPanel}</aside></main>
+    <main class="workspace-main"><section class="workspace-map-stage"><div class="workspace-map-toolbar"><div><strong>Area of interest</strong><span>WGS84 · ${escapeHtml(aoi.policy || "generic")}</span>${aoiDetails}</div><span class="workspace-map-status">${escapeHtml(userAoi ? (screenedCurrent ? "Loaded AOI · Annual NLCD screened" : "Loaded AOI · source results not evaluated") : "Recorded AOI boundary")}</span></div><div class="workspace-map-wrap">${renderAoiMap(aoi)}${workspaceLayerControl(rows, previews)}</div><div class="map-caption"><span>${escapeHtml(userAoi ? (screenedCurrent ? "Annual NLCD result is bound to this exact AOI revision; other sources remain not evaluated." : "Loaded AOI shown. Existing DC metrics and display previews are not reused.") : "Recorded AOI boundary and optional NLCD/3DEP display previews shown; source metrics remain independent.")}</span><span class="map-identify map-identify-idle" data-nlcd-identify aria-live="polite">${previews.annual_nlcd?.status === "available" ? "Click inside the NLCD preview to identify observed land cover." : "NLCD identify unavailable: no AOI-specific preview is attached."}</span></div></section><aside class="workspace-sidebar"><div class="workspace-sidebar-head"><div><p class="eyebrow">${activeTab === "results" ? "Screening summary" : "Workspace view"}</p><h2>${escapeHtml(activeTab === "results" ? "Source findings" : activeTab === "reports" ? "Reports" : "Data sources")}</h2><span class="workspace-preliminary">${userAoi ? (screenedCurrent ? "AOI loaded · Annual NLCD screened" : "AOI loaded · screening not run") : "Preliminary screening · no composite score"}</span></div><span class="workspace-sidebar-count">${formatNumber(rows.length, 0)} sources</span></div>${tabPanel}</aside></main>
   </div>`;
 };
 

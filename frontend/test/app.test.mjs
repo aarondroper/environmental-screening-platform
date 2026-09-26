@@ -126,11 +126,21 @@ test("shows recorded NLCD and 3DEP metrics without inventing a cross-source resu
   const html = renderScreeningReport(report);
   assert.match(html, /AOI coverage.*100% covered/);
   assert.match(html, /Valid pixels.*62/);
-  assert.match(html, /Observed classes.*developed_high_intensity: 57/);
+  assert.match(html, /Observed land cover.*Developed High Intensity/);
+  assert.match(html, /Developed High Intensity.*51,264\.1 m² · 91\.94%/);
   assert.match(html, /Valid cells.*484/);
   assert.match(html, /Elevation.*18\.52–22\.55 meters/);
   assert.match(html, /Mean.*20\.71 meters/);
   assert.doesNotMatch(html, /overall suitability/);
+});
+
+test("keeps the observed NLCD class summary visible while secondary sources stay collapsed", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /data-screening-source="annual_nlcd" open/);
+  assert.match(html, /Observed land cover/);
+  assert.match(html, /Annual NLCD observations only/);
+  assert.match(html, /class="workspace-secondary-sources"/);
+  assert.doesNotMatch(html, /data-screening-source="3dep" open/);
 });
 
 test("renders unavailable, incomplete, rejected, conditional, unknown, and nodata semantics", () => {
@@ -176,7 +186,7 @@ test("keeps the persistent layer control truthful about rendered and non-rendere
   assert.match(html, /terrain-legend/);
   assert.match(html, /Illumination only; no elevation value, unit, or datum is displayed/);
   assert.match(html, /nlcd-legend/);
-  assert.match(html, /developed_high_intensity/);
+  assert.match(html, /Developed High Intensity/);
   assert.match(html, /USGS 3DEP/);
   assert.match(html, /3DEP terrain preview/);
   assert.match(html, /NRCS SSURGO.*Incomplete/);
@@ -271,6 +281,7 @@ test("replacement AOIs show explicit not-evaluated states and no stale metrics o
   assert.match(html, /Not evaluated/);
   assert.match(html, /Loaded AOI · source results not evaluated/);
   assert.match(html, /Existing DC metrics and display previews are not reused/);
+  assert.match(html, /NLCD identify unavailable: no AOI-specific preview is attached/);
   assert.doesNotMatch(html, /Valid pixels.*62/);
   assert.doesNotMatch(html, /data-nlcd-visibility/);
   assert.doesNotMatch(html, /data-3dep-visibility/);

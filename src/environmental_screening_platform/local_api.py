@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 
 from .catalog import SQLiteSourceRepository
 from .ingestion import ingest_nlcd_aoi
+from .nlcd_preview import generate_nlcd_preview
 from .store import read_json, write_json
 from .workflow import (
     bind_job_snapshots,
@@ -175,6 +176,70 @@ def _lineage_issue(
     return None
 
 
+def _generate_nlcd_browser_preview(
+    data_root: Path, job: dict[str, Any], result: dict[str, Any]
+) -> dict[str, Any]:
+    """Create the job-scoped NLCD display derivative after screening succeeds."""
+    source_result = next(
+        item for item in result.get("source_results", []) if item["source_id"] == "annual_nlcd"
+    )
+    provenance = source_result.get("provenance") or {}
+    artifact_path = provenance.get("artifact_path")
+    if not artifact_path:
+        # Mocked workflow results and catalog-only callers have no raster to display.
+        # They retain the existing report shape; a real successful bridge run always
+        # has an artifact path from the promoted AOI-scoped version.
+        return {}
+    if not provenance.get("sha256"):
+        raise ValueError("Validated NLCD result has no source checksum for browser preview lineage")
+    revision = _revision(data_root, job["project_id"], job["aoi_id"])
+    source_metadata = {
+        "source_id": "annual_nlcd",
+        "source_snapshot_id": source_result.get("source_snapshot_id"),
+        "source_version_id": source_result.get("source_version_id"),
+        "candidate_id": source_result.get("candidate_id"),
+        "ingestion_run_id": source_result.get("ingestion_run_id"),
+        "sha256": provenance.get("sha256"),
+        "source_year": (source_result.get("metrics") or {}).get("source_year", 2025),
+        "provider_release": provenance.get("provider_release"),
+        "source_url": provenance.get("source_url"),
+        "retrieved_at": provenance.get("retrieved_at"),
+        "terms_url": provenance.get("terms_url"),
+        "aoi_geometry_sha256": revision["geometry_sha256"],
+    }
+    preview_dir = data_root / "workspace" / "jobs" / job["job_id"] / "browser-previews"
+    preview_png = preview_dir / "annual-nlcd-preview.png"
+    metadata_json = preview_dir / "annual-nlcd-preview.json"
+    metadata = generate_nlcd_preview(
+        Path(artifact_path),
+        preview_png,
+        metadata_json,
+        aoi_geometry=revision["geometry"],
+        aoi_revision=int(revision["revision"]),
+        aoi_geometry_sha256=revision["geometry_sha256"],
+        source_metadata=source_metadata,
+    )
+    return {
+        "status": "available",
+        "display_derivative": True,
+        "source_id": "annual_nlcd",
+        "source_year": metadata["source_year"],
+        "source_snapshot_id": source_result.get("source_snapshot_id"),
+        "source_version_id": source_result.get("source_version_id"),
+        "candidate_id": source_result.get("candidate_id"),
+        "ingestion_run_id": source_result.get("ingestion_run_id"),
+        "source_sha256": metadata["source"]["sha256"],
+        "aoi_revision": int(revision["revision"]),
+        "aoi_geometry_sha256": revision["geometry_sha256"],
+        "asset_url": f"/api/screening-jobs/{job['job_id']}/nlcd-preview/asset",
+        "metadata_url": f"/api/screening-jobs/{job['job_id']}/nlcd-preview/metadata",
+        "opacity_default": metadata["display"]["opacity_default"],
+        "default_visible": True,
+        "legend": metadata["legend"],
+        "representation": "AOI-specific categorical RGBA display derivative",
+    }
+
+
 def _presentation_report(
     data_root: Path,
     job: dict[str, Any],
@@ -183,6 +248,7 @@ def _presentation_report(
     bridge_status: str,
     bridge_phase: str,
     failure_reason: str | None = None,
+    browser_previews: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     revision = _revision(data_root, job["project_id"], job["aoi_id"])
     project = read_json(_paths(data_root)["projects"] / job["project_id"] / "project.json")
@@ -243,7 +309,7 @@ def _presentation_report(
         "aoi": aoi,
         "selected_sources": list(BRIDGE_SOURCES),
         "sources": sources,
-        "browser_previews": {},
+        "browser_previews": browser_previews or {},
         "aoi_context": {
             "origin": "user_provided",
             "screened": bool(source_result and bridge_status == "succeeded"),
@@ -365,14 +431,21 @@ class LocalScreeningBridge:
             )
             if source_result["attempt_status"] != "validated":
                 raise ValueError(source_result.get("reason") or "NLCD screening failed")
+            browser_previews = _generate_nlcd_browser_preview(
+                self.data_root,
+                read_json(_job_path(self.data_root, job_id)),
+                result,
+            )
             report = _presentation_report(
                 self.data_root,
                 read_json(_job_path(self.data_root, job_id)),
                 result,
                 bridge_status="succeeded",
                 bridge_phase="completed",
+                browser_previews=browser_previews,
             )
             result["local_bridge"] = report["screening_run"]
+            result["browser_previews"] = browser_previews
             write_json(self.data_root / "workspace" / "jobs" / job_id / "result.json", result)
             job = read_json(_job_path(self.data_root, job_id))
             job["bridge"] = {
@@ -432,6 +505,7 @@ class LocalScreeningBridge:
                 result,
                 bridge_status="succeeded",
                 bridge_phase="completed",
+                browser_previews=result.get("browser_previews", {}),
             )
         elif bridge_report_path.exists():
             report = read_json(bridge_report_path)
@@ -490,13 +564,40 @@ def serve_local_api(
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path.startswith("/api/screening-jobs/"):
-                job_id = parsed.path.rsplit("/", 1)[-1]
+                parts = parsed.path.strip("/").split("/")
+                job_id = parts[2] if len(parts) >= 3 else ""
                 try:
+                    if parts[3:] == ["nlcd-preview", "metadata"]:
+                        path = self._job_preview_path(job_id, "annual-nlcd-preview.json")
+                        self._json(200, read_json(path))
+                        return
+                    if parts[3:] == ["nlcd-preview", "asset"]:
+                        path = self._job_preview_path(job_id, "annual-nlcd-preview.png")
+                        payload = path.read_bytes()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "image/png")
+                        self.send_header("Content-Length", str(len(payload)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        self.wfile.write(payload)
+                        return
                     self._json(200, bridge.status(job_id))
                 except (FileNotFoundError, ValueError, KeyError) as exc:
                     self._json(404, {"error": str(exc)})
                 return
             super().do_GET()
+
+        def _job_preview_path(self, job_id: str, name: str) -> Path:
+            if not job_id or "/" in job_id or "\\" in job_id:
+                raise FileNotFoundError("Invalid screening job identifier")
+            path = self.server_data_root / "workspace" / "jobs" / job_id / "browser-previews" / name
+            if not path.is_file():
+                raise FileNotFoundError(path)
+            return path
+
+        @property
+        def server_data_root(self) -> Path:
+            return data_root.resolve()
 
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)

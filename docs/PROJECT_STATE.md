@@ -161,6 +161,14 @@ Milestone 2B.1's first local ETL path, 2B.2's durable metadata catalog/candidate
 
 No composite score, regulatory determination, wetland finding, FEMA flood determination, or safety/suitability conclusion is implemented or permitted. Missing, unavailable, pending, incomplete, or quarantined data are never serialized as zero/absence. The Northern Colorado regression fixture is not narrowed.
 
+The current NLCD bridge frontier also includes an AOI-specific browser
+derivative on successful generic runs. It is generated from the exact
+snapshotted raster, stored outside Git, served by job-scoped routes, and
+lineage-checked in the frontend. The map identifies valid pixels by readable
+NLCD class; outside-AOI and nodata pixels remain unknown. This does not alter
+the recorded DC demonstration, source maturity, or the status of other
+sources.
+
 ## Live generic-AOI acquisition smoke — 2026-09-25
 
 The generic workflows were run against one deterministic WGS84 Polygon outside Northern Colorado: longitude `-77.041` to `-77.039`, latitude `38.900` to `38.902` (approximately `0.03852 km²`). The persisted project is `2644c8a3-5c40-41f1-975a-76b10cd446ad`, AOI `f07d67ab-b7af-4ac8-915f-f0c84ed920f9`, revision `1`, policy `generic`, geometry SHA-256 `216677406ea7cb6817db15c205ae9c4c952e425985dddf2149219eece6506fbc`. The isolated records and raw artifacts are outside Git under `/home/aarondroper/projects/environmental-screening-platform-data/live-generic-smoke-20260925/`.

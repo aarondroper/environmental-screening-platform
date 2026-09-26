@@ -201,11 +201,15 @@ The primary `Run screening` action sends the currently loaded validated
 GeoJSON AOI to the local bridge. The bridge creates an immutable AOI revision
 and job, runs the existing generic NLCD acquisition/validation/AOI-scoped
 promotion/snapshot-pinned screening path, and reports queued, running,
-succeeded, or failed states. It is not deployed, authenticated, or backed by a
-queue. It does not generate a preview, reuse Washington, DC metrics, or
-process 3DEP, SSURGO, FEMA, or PAD-US; those sources remain explicitly not
-evaluated for the run. Raw artifacts and catalog/workspace records remain
-under the external data directory.
+succeeded, or failed states. After a successful run it generates an
+AOI-specific categorical NLCD display derivative from the exact snapshotted
+raster and serves its provenance metadata and PNG through job-scoped local
+routes. The workspace renders that layer with transparent outside-AOI/nodata
+pixels and click identification by human-readable NLCD class. It is not
+deployed, authenticated, or backed by a queue; it does not reuse Washington,
+DC metrics or previews, or process 3DEP, SSURGO, FEMA, or PAD-US. Those
+sources remain explicitly not evaluated for the run. Raw artifacts and
+catalog/workspace records remain under the external data directory.
 
 Use `Load AOI` in the primary workspace to choose a local GeoJSON file or paste
 GeoJSON. The browser accepts one valid, nonempty WGS84 Polygon or MultiPolygon,

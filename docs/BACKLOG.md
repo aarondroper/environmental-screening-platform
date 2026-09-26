@@ -184,9 +184,24 @@ identity.
 **Limits:** This is a local development bridge, not a deployed API, queue,
 authentication boundary, or production worker. Annual NLCD is the only source
 acquired or screened. 3DEP, SSURGO, FEMA, and PAD-US remain not evaluated for
-these jobs, no browser preview is generated, and no composite or regulatory
-conclusion is produced. Existing DC demo, fixture aliases, and operations
-route remain unchanged.
+these jobs, and no composite or regulatory conclusion is produced. Existing
+DC demo, fixture aliases, and operations route remain unchanged.
+
+## Milestone 2B.28 — AOI-specific Annual NLCD screening display
+
+**Status:** Implemented. Successful generic-AOI NLCD jobs generate a
+job-scoped browser display derivative from the exact snapshotted raster. The
+local bridge serves provenance-checked metadata and PNG routes; the Leaflet
+workspace renders the categorical overlay, legend, opacity, AOI-on-top order,
+and pixel identify interaction. The findings view presents human-readable
+class names with observed area and percentages.
+
+**Explicit limits:** The derivative is not a source replacement and remains
+outside Git in the external data root. Outside-AOI and nodata pixels remain
+unknown. The path is local/bounded and does not change source maturity,
+promote SSURGO/PAD-US/FEMA, add a composite, or create a hosted API. The next
+frontier is broader product/runtime hardening and review of generic-AOI source
+coverage, not another source-specific display claim.
 
 ## Milestone 1 — Geography and source feasibility
 

@@ -262,8 +262,12 @@ the development `screening serve` bridge, `Run screening` sends the loaded
 geometry to the local bridge, which creates the durable AOI revision and
 NLCD-only job and returns its queued/running/succeeded/failed report. The
 bridge validates the backend geometry hash and exact source lineage before
-displaying results; it does not generate a browser preview. Invalid or empty
-input is rejected without repair, clipping, or expansion.
+displaying results, then creates an AOI-specific RGBA PNG display derivative
+from the exact snapshotted raster and serves job-scoped metadata and asset
+routes. The derivative repeats the AOI revision/hash, source snapshot/version,
+checksum, source year, CRS, transform, dimensions, nodata, and display
+transformation; the frontend validates that lineage before rendering. Invalid
+or empty input is rejected without repair, clipping, or expansion.
 
 When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 

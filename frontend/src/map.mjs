@@ -1,5 +1,6 @@
 import L from "leaflet";
 import { parseAoiGeometry } from "./aoi-geometry.mjs";
+import { identifyNlcdPixel } from "./nlcd-identify.mjs";
 
 const setMapState = (element, state, message) => {
   const status = element.querySelector("[data-map-status]");
@@ -52,6 +53,30 @@ const setPreviewState = (element, key, state, message) => {
   updateVisibleLayerCount(element);
 };
 
+const setIdentifyMessage = (element, result) => {
+  const target = element.closest(".workspace-map-stage")?.querySelector("[data-nlcd-identify]");
+  if (!target) return;
+  target.textContent = result.message;
+  target.dataset.identifyState = result.status;
+  target.className = `map-identify map-identify-${result.status}`;
+};
+
+const installNlcdIdentify = (element, map, overlay, metadata, aoi) => {
+  const image = overlay.getElement?.();
+  if (!image || typeof document === "undefined") return;
+  const canvas = document.createElement("canvas");
+  canvas.width = Number(metadata.raster?.width || image.naturalWidth);
+  canvas.height = Number(metadata.raster?.height || image.naturalHeight);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context || !canvas.width || !canvas.height) return;
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  map.on("click", (event) => setIdentifyMessage(
+    element,
+    identifyNlcdPixel(event.latlng, metadata, imageData, aoi),
+  ));
+};
+
 const validatePreviewMetadata = (metadata, preview, aoi, sourceLabel) => {
   if (!metadata || metadata.status !== "available" || metadata.display_derivative !== true) {
     throw new Error(`${sourceLabel} preview metadata is not available as a display derivative`);
@@ -97,10 +122,12 @@ const mountRasterPreview = (element, map, boundary, aoi, preview, key, sourceLab
       overlay.once("load", () => {
         if (!defaultVisible) map.removeLayer(overlay);
         boundary.bringToFront();
+        if (key === "nlcd") installNlcdIdentify(element, map, overlay, metadata, aoi);
         setPreviewState(element, key, "available", "");
       });
       overlay.once("error", () => {
         map.removeLayer(overlay);
+        if (key === "nlcd") setIdentifyMessage(element, { status: "unavailable", message: "NLCD identify unavailable: the AOI-specific preview could not be loaded." });
         setPreviewState(element, key, "error", `The ${sourceLabel} preview asset could not be loaded.`);
       });
       const control = layerControl(element);

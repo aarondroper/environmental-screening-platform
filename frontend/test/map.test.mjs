@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { parseAoiGeometry } from "../src/aoi-geometry.mjs";
+import { identifyNlcdPixel } from "../src/nlcd-identify.mjs";
 
 const report = JSON.parse(await readFile(new URL("../public/demo/report.json", import.meta.url), "utf8"));
 
@@ -62,4 +63,28 @@ test("wires the loaded AOI to the local NLCD screening bridge", async () => {
   assert.match(main, /\/api\/screening\/nlcd/);
   assert.match(main, /\/api\/screening-jobs/);
   assert.match(main, /rebindReportToAoi\(recordedReport, context\)/);
+});
+
+test("identifies an NLCD class by human-readable name and preserves unknown states", () => {
+  const metadata = {
+    raster: { width: 2, height: 2 },
+    alignment: { overlay_bounds_wgs84: [0, 0, 2, 2] },
+    legend: [{ value: 24, label: "developed_high_intensity", color: "#ab0000" }],
+  };
+  const imageData = { width: 2, height: 2, data: new Uint8ClampedArray([
+    171, 0, 0, 255, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+  ]) };
+  const aoi = { geometry: { type: "Polygon", coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] } };
+  assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 0.5 }, metadata, imageData, aoi).message, "NLCD class Developed High Intensity (24)");
+  assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 1.5 }, metadata, imageData, aoi).status, "nodata");
+  assert.equal(identifyNlcdPixel({ latitude: 3, longitude: 1 }, metadata, imageData, aoi).status, "outside_coverage");
+  assert.equal(identifyNlcdPixel({ latitude: 1, longitude: 3 }, metadata, imageData, aoi).status, "outside_coverage");
+});
+
+test("identifies a location outside the loaded AOI separately from raster coverage", () => {
+  const metadata = { raster: { width: 1, height: 1 }, alignment: { overlay_bounds_wgs84: [0, 0, 2, 2] }, legend: [] };
+  const imageData = { width: 1, height: 1, data: new Uint8ClampedArray([0, 0, 0, 255]) };
+  const aoi = { geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } };
+  assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 1.5 }, metadata, imageData, aoi).status, "outside_aoi");
 });
