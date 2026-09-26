@@ -118,6 +118,8 @@ const mountRasterPreview = (element, map, boundary, aoi, preview, key, sourceLab
     .catch((error) => setPreviewState(element, key, "error", `${sourceLabel} preview unavailable: ${error.message}`));
 };
 
+export const fitMapToAoi = (map, boundary) => map.fitBounds(boundary.getBounds(), { padding: [28, 28], maxZoom: 16 });
+
 export const mountAoiMap = (element, aoi, previews = {}) => {
   if (!element) throw new Error("AOI map container is missing");
   const feature = parseAoiGeometry(aoi);
@@ -131,7 +133,7 @@ export const mountAoiMap = (element, aoi, previews = {}) => {
   const layer = L.geoJSON(feature, {
     style: { color: "#075f52", weight: 3, opacity: 1, fillColor: "#58aa96", fillOpacity: 0.36 },
   }).addTo(map);
-  map.fitBounds(layer.getBounds(), { padding: [28, 28], maxZoom: 16 });
+  fitMapToAoi(map, layer);
   mountRasterPreview(element, map, layer, aoi, previews["3dep"], "3dep", "3DEP terrain", 200);
   mountRasterPreview(element, map, layer, aoi, previews.annual_nlcd, "nlcd", "NLCD", 300);
   tileLayer.once("load", () => setMapState(element, "ready", ""));

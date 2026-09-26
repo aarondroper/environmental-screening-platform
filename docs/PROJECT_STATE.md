@@ -2,7 +2,7 @@
 
 ## Snapshot status
 
-Verified on 2026-09-25 after runtime verification of the Milestone 2B.4 AOI boundary, Milestone 2B.5 representative SSURGO fixture, bounded Milestone 2B.6 SSURGO screening consumption, snapshot-pinned Annual NLCD and 3DEP fixture screening, the bounded unified fixture orchestration, automated regional Annual NLCD acquisition, read-only parsing QA, the diagnostic audit, owner-approved derived staging of the 19 acquired SSURGO packages, inactive catalog materialization of that staging result, read-only regional SSURGO coverage/seam analysis, explicit inactive SSURGO candidate disposition, the first AOI-agnostic boundary refactor, generic NLCD acquisition, generic 3DEP tile planning/acquisition, and a live generic SSURGO DC001 package smoke. This checkout contains a small Python CLI/workflow, a SQLite source metadata catalog, immutable per-job source snapshots, an optional PostGIS spatial repository/migration boundary, and deterministic tests. It is a local prototype, not the deployed PostGIS/API/worker/web platform described by the product brief. Source maturity labels below remain bounded to their prior validation scopes; ingestion, job snapshot, fixture-only promotion, fixture screening, regional NLCD acquisition, generic tile planning, generic package acquisition, package QA, discrepancy diagnostics, derived staging, inactive candidate materialization, coverage analysis, or candidate disposition does not constitute final Milestone 1 source approval.
+Verified on 2026-09-26 after runtime verification of the Milestone 2B.4 AOI boundary, Milestone 2B.5 representative SSURGO fixture, bounded Milestone 2B.6 SSURGO screening consumption, snapshot-pinned Annual NLCD and 3DEP fixture screening, the bounded unified fixture orchestration, automated regional Annual NLCD acquisition, read-only parsing QA, the diagnostic audit, owner-approved derived staging of the 19 acquired SSURGO packages, inactive catalog materialization of that staging result, read-only regional SSURGO coverage/seam analysis, explicit inactive SSURGO candidate disposition, the first AOI-agnostic boundary refactor, generic NLCD acquisition, generic 3DEP tile planning/acquisition, and a live generic SSURGO DC001 package smoke. This checkout contains a small Python CLI/workflow, a SQLite source metadata catalog, immutable per-job source snapshots, an optional PostGIS spatial repository/migration boundary, and deterministic tests. It is a local prototype, not the deployed PostGIS/API/worker/web platform described by the product brief. Source maturity labels below remain bounded to their prior validation scopes; ingestion, job snapshot, fixture-only promotion, fixture screening, regional NLCD acquisition, generic tile planning, generic package acquisition, package QA, discrepancy diagnostics, derived staging, inactive candidate materialization, coverage analysis, or candidate disposition does not constitute final Milestone 1 source approval.
 
 ## Verified repository and Git state
 
@@ -35,6 +35,17 @@ backend, environmental provider access, PostGIS connection, raw artifact,
 authentication, worker, or new screening behavior was added. The primary map
 requests attributed public OpenStreetMap tiles and reports a visible error if
 the basemap cannot load.
+
+The primary workspace also supports a frontend-only `Load AOI` session action.
+It accepts a pasted GeoJSON document or local GeoJSON file containing one valid,
+nonempty WGS84 Polygon or MultiPolygon, computes bounds and a deterministic
+geometry hash, and fits the Leaflet map to the loaded geometry. A replacement
+AOI is not persisted or screened in this slice: all recorded Washington, DC
+NLCD, 3DEP, SSURGO, FEMA, and PAD-US results and display derivatives are
+cleared from the active presentation and shown as `Not evaluated` until a
+future AOI-bound screening run exists. Invalid, empty, non-area, malformed, or
+self-intersecting input is rejected in the secondary loader panel; the DC
+demonstration remains the default and reset state.
 
 The checked-in NLCD display derivative is `frontend/public/demo/nlcd-preview.png`
 (3,486 bytes, SHA-256

@@ -24,6 +24,7 @@ const STATUS_LABELS = {
   incomplete: "Incomplete",
   unavailable: "Unavailable",
   rejected: "Rejected",
+  not_evaluated: "Not evaluated",
   unknown: "Unknown",
   blocked: "Blocked",
   quarantined: "Quarantined",
@@ -47,6 +48,7 @@ const STATUS_HELP = {
   quarantined: "Source geometry or observations were retained for review and not accepted.",
   failed: "An acquisition or processing attempt failed.",
   not_started: "No lifecycle record was found.",
+  not_evaluated: "This source was not evaluated for the currently loaded AOI.",
 };
 
 const escapeHtml = (value) => String(value ?? "—")
@@ -73,7 +75,7 @@ const formatNumber = (value, digits = 2) => {
 
 const lifecycleState = (source = {}) => {
   const lifecycle = source.lifecycle || {};
-  for (const state of ["blocked", "unavailable", "incomplete", "failed", "unknown", "quarantined"]) {
+  for (const state of ["not_evaluated", "blocked", "unavailable", "incomplete", "failed", "unknown", "quarantined"]) {
     if ((lifecycle[state] || []).length) return state;
   }
   for (const stage of ["screened", "promoted", "validated", "acquired"]) {
@@ -127,6 +129,7 @@ export const sourceRows = (report = {}) => {
       state: lifecycleState(source),
       lifecycle: source.lifecycle || {},
       result: source.screening?.at(-1)?.result?.[0] || null,
+      notEvaluated: Boolean(report.aoi_context?.stale_recorded_results),
     };
   });
 };
@@ -136,6 +139,7 @@ const statusBadge = (state) => `<span class="badge badge-${escapeHtml(state)}" t
 const valueList = (items) => items.length ? items.map((item) => `<code>${escapeHtml(item)}</code>`).join(" ") : "—";
 
 const sourceMetrics = (row) => {
+  if (row.notEvaluated) return `<div class="metric"><dt>Evaluation</dt><dd>Not evaluated for this AOI</dd></div>`;
   const metrics = row.result?.metrics || row.source.candidates?.at(-1)?.validation?.metrics || {};
   const coverage = metrics.coverage || {};
   const pixels = metrics.pixel_accounting || {};
@@ -197,6 +201,7 @@ const sourceDetail = (row) => {
 };
 
 const screeningStatus = (row) => {
+  if (row.notEvaluated) return statusBadge("not_evaluated");
   if (row.id === "padus") return `${statusBadge("conditional")} ${statusBadge("unknown")}`;
   if (row.id === "fema_nfhl") return `${statusBadge("blocked")} ${statusBadge("unavailable")}`;
   if (row.result?.observation_status === "data_observed") return statusBadge("observed");
@@ -206,6 +211,7 @@ const screeningStatus = (row) => {
 const screeningMetric = (label, value) => `<div class="screening-metric"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
 
 const screeningMetrics = (row) => {
+  if (row.notEvaluated) return [screeningMetric("Evaluation", "Not evaluated for this AOI")];
   const metrics = row.result?.metrics || {};
   const coverage = metrics.coverage || {};
   if (row.id === "annual_nlcd" && row.result) {
@@ -290,6 +296,7 @@ const renderAoiMap = (aoi) => {
 };
 
 const layerState = (row, previews = {}) => {
+  if (row.notEvaluated) return { state: "not_evaluated", label: "Not evaluated", detail: "No recorded source layer is tied to this AOI." };
   if (row.id === "annual_nlcd") {
     const preview = previews.annual_nlcd;
     if (preview?.status === "available") {
@@ -317,6 +324,7 @@ const layerState = (row, previews = {}) => {
 };
 
 const workspaceMetricSummary = (row) => {
+  if (row.notEvaluated) return "Not evaluated for this AOI";
   const metrics = row.result?.metrics || {};
   const coverage = metrics.coverage || {};
   if (row.id === "annual_nlcd" && row.result) return `${formatNumber(coverage.covered_aoi_percentage)}% AOI · ${formatNumber(metrics.valid_pixel_count, 0)} valid pixels`;
@@ -365,7 +373,10 @@ const workspaceTabs = (activeTab) => {
 
 const workspaceResultsPanel = (rows, previews = {}) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source summary</p><h2>Independent findings</h2></div><span class="muted">No composite score</span></div><div class="workspace-source-list">${rows.map((row) => workspaceSourceRow(row, previews)).join("")}</div><details class="workspace-info"><summary>Interpretation limits</summary><p>Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.” No regulatory, safety, or suitability conclusion is produced.</p></details></div>`;
 
-const workspaceReportsPanel = () => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Recorded outputs</p><h2>Reports and exports</h2></div></div><p class="muted">These controls expose only artifacts present in the recorded demonstration. No live processing or provider access is performed.</p><div class="workspace-action-list"><a class="workspace-action workspace-action-primary" href="demo/report.json" download>Download JSON report</a><span class="workspace-action workspace-action-disabled" aria-disabled="true">CSV not included in fixture</span><span class="workspace-action workspace-action-disabled" aria-disabled="true">GeoJSON not included in fixture</span><a class="workspace-action" href="demo/report.json" target="_blank" rel="noreferrer">View underlying JSON</a></div></div>`;
+const workspaceReportsPanel = (report = {}) => {
+  const userAoi = report.aoi_context?.origin === "user_provided";
+  return `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Recorded outputs</p><h2>Reports and exports</h2></div></div><p class="muted">${userAoi ? "This loaded AOI has not been screened. The recorded DC report cannot be exported as a result for this geometry." : "These controls expose only artifacts present in the recorded demonstration. No live processing or provider access is performed."}</p><div class="workspace-action-list">${userAoi ? `<span class="workspace-action workspace-action-disabled" aria-disabled="true">JSON export unavailable until screening</span>` : `<a class="workspace-action workspace-action-primary" href="demo/report.json" download>Download JSON report</a>`}<span class="workspace-action workspace-action-disabled" aria-disabled="true">CSV not included in fixture</span><span class="workspace-action workspace-action-disabled" aria-disabled="true">GeoJSON not included in fixture</span>${userAoi ? "" : `<a class="workspace-action" href="demo/report.json" target="_blank" rel="noreferrer">View underlying JSON</a>`}</div></div>`;
+};
 
 const workspaceSourcesPanel = (rows, previews = {}) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source catalog</p><h2>Data sources</h2></div><a class="workspace-secondary-link" href="?view=operations">Operations view</a></div><div class="workspace-source-catalog">${rows.map((row) => { const layer = layerState(row, previews); const preview = previews[row.id]; const source = row.source; const candidate = source.candidates?.at(-1) || {}; const version = source.active_aoi_versions?.at(-1) || source.source_versions?.at(-1) || {}; return `<div class="workspace-catalog-row"><div><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(source.provider_release || candidate.provider_release || version.provider_release || "Release not recorded")}</small></div><div>${screeningStatus(row)}<small>${escapeHtml(layer.label)}</small></div><p>${escapeHtml(layer.detail)}</p>${preview?.status === "available" ? `<p class="workspace-preview-provenance"><strong>Display derivative</strong> · ${escapeHtml(preview.representation || "browser preview")} · source version <code>${escapeHtml(preview.source_version_id)}</code> · <a href="${escapeHtml(preview.metadata_url)}" target="_blank" rel="noreferrer">metadata</a></p>` : ""}<details><summary>Version and provenance</summary>${screeningProvenance(row)}</details></div>`; }).join("")}</div><p class="workspace-guardrail">PAD-US and FEMA are shown as source states only. Hydric-soil information is soil information, not a wetlands inventory or regulatory determination.</p></div>`;
 
@@ -377,11 +388,19 @@ export const renderScreeningReport = (report = {}, requestedTab = "results") => 
   const previews = report.browser_previews || {};
   const screenedRows = rows.filter((row) => row.result);
   const activeTab = ["results", "reports", "sources"].includes(requestedTab) ? requestedTab : "results";
-  const tabPanel = activeTab === "reports" ? workspaceReportsPanel() : activeTab === "sources" ? workspaceSourcesPanel(rows, previews) : workspaceResultsPanel(rows, previews);
+  const userAoi = report.aoi_context?.origin === "user_provided";
+  const bounds = report.aoi?.spatial_validation?.bounds || report.aoi_context?.bounds;
+  const boundsText = Array.isArray(bounds) ? bounds.map((value) => Number(value).toFixed(6)).join(", ") : "Not recorded";
+  const aoiDetails = `<details class="workspace-aoi-details"><summary>AOI details</summary><dl><div><dt>Input</dt><dd>${escapeHtml(userAoi ? "User-provided GeoJSON" : "Recorded demonstration")}</dd></div><div><dt>Bounds</dt><dd><code>${escapeHtml(boundsText)}</code></dd></div><div><dt>Geometry hash</dt><dd><code class="hash">${escapeHtml(aoi.geometry_sha256)}</code></dd></div></dl></details>`;
+  const loadAoiControl = `<details class="workspace-aoi-loader"><summary class="workspace-action workspace-action-primary">Load AOI</summary><div class="workspace-aoi-form"><p><strong>Load a GeoJSON AOI</strong></p><p class="muted">WGS84 Polygon or MultiPolygon only. This browser view validates and displays the geometry; it does not acquire or screen new source data.</p><label>GeoJSON file<input type="file" accept=".geojson,application/geo+json,application/json" data-aoi-file></label><label>Paste GeoJSON<textarea rows="4" placeholder="{ &quot;type&quot;: &quot;Feature&quot;, … }" data-aoi-paste></textarea></label><div class="workspace-aoi-form-actions"><button type="button" class="workspace-action workspace-action-primary" data-aoi-apply>Load geometry</button>${userAoi ? `<button type="button" class="workspace-action" data-aoi-reset>Use DC demo</button>` : ""}</div><p class="workspace-aoi-error" data-aoi-error role="alert" hidden></p></div></details>`;
+  const statusLabel = userAoi ? "Not evaluated" : "Partial result";
+  const statusDetail = userAoi ? "Recorded DC results are not reused" : `${formatNumber(screenedRows.length, 0)} of ${formatNumber(rows.length, 0)} sources observed`;
+  const exportAction = userAoi ? `<span class="workspace-action workspace-action-disabled" aria-disabled="true">Export unavailable</span>` : `<a class="workspace-action workspace-action-primary" href="demo/report.json" download>Export JSON</a>`;
+  const tabPanel = activeTab === "reports" ? workspaceReportsPanel(report) : activeTab === "sources" ? workspaceSourcesPanel(rows, previews) : workspaceResultsPanel(rows, previews);
   return `<div class="workspace-shell">
-    <header class="workspace-header"><div class="workspace-header-project"><span class="workspace-mark">ES</span><div><h1>${escapeHtml(project.name || "Recorded environmental screening")}</h1><span>${formatNumber(area.value_sqkm, 5)} km² · AOI revision ${escapeHtml(aoi.revision)} · recorded demonstration</span></div></div><div class="workspace-header-status"><span class="badge badge-partial">Partial result</span><span>${formatNumber(screenedRows.length, 0)} of ${formatNumber(rows.length, 0)} sources observed</span></div><div class="workspace-header-actions"><a class="workspace-action workspace-action-primary" href="demo/report.json" download>Export JSON</a><a class="workspace-tech-link" href="?view=operations">Technical view</a></div></header>
+    <header class="workspace-header"><div class="workspace-header-project"><span class="workspace-mark">ES</span><div><h1>${escapeHtml(userAoi ? "User-provided environmental screening" : project.name || "Recorded environmental screening")}</h1><span>${area.value_sqkm === null || area.value_sqkm === undefined ? "Area not calculated in browser" : `${formatNumber(area.value_sqkm, 5)} km²`} · AOI revision ${escapeHtml(aoi.revision)} · ${escapeHtml(userAoi ? "local AOI session" : "recorded demonstration")}</span></div></div><div class="workspace-header-status"><span class="badge badge-${userAoi ? "not_evaluated" : "partial"}">${statusLabel}</span><span>${escapeHtml(statusDetail)}</span></div><div class="workspace-header-actions">${loadAoiControl}${exportAction}<a class="workspace-tech-link" href="?view=operations">Technical view</a></div></header>
     ${workspaceTabs(activeTab)}
-    <main class="workspace-main"><section class="workspace-map-stage"><div class="workspace-map-toolbar"><div><strong>Area of interest</strong><span>WGS84 · ${escapeHtml(aoi.policy || "generic")}</span></div><span class="workspace-map-status">Recorded AOI boundary</span></div><div class="workspace-map-wrap">${renderAoiMap(aoi)}${workspaceLayerControl(rows, previews)}</div><div class="map-caption"><span>Recorded AOI boundary and optional NLCD/3DEP display previews shown; source metrics remain independent.</span></div></section><aside class="workspace-sidebar"><div class="workspace-sidebar-head"><div><p class="eyebrow">${activeTab === "results" ? "Screening summary" : "Workspace view"}</p><h2>${escapeHtml(activeTab === "results" ? "Source findings" : activeTab === "reports" ? "Reports" : "Data sources")}</h2><span class="workspace-preliminary">Preliminary screening · no composite score</span></div><span class="workspace-sidebar-count">${formatNumber(rows.length, 0)} sources</span></div>${tabPanel}</aside></main>
+    <main class="workspace-main"><section class="workspace-map-stage"><div class="workspace-map-toolbar"><div><strong>Area of interest</strong><span>WGS84 · ${escapeHtml(aoi.policy || "generic")}</span>${aoiDetails}</div><span class="workspace-map-status">${escapeHtml(userAoi ? "Loaded AOI · source results not evaluated" : "Recorded AOI boundary")}</span></div><div class="workspace-map-wrap">${renderAoiMap(aoi)}${workspaceLayerControl(rows, previews)}</div><div class="map-caption"><span>${escapeHtml(userAoi ? "Loaded AOI shown. Existing DC metrics and display previews are not reused." : "Recorded AOI boundary and optional NLCD/3DEP display previews shown; source metrics remain independent.")}</span></div></section><aside class="workspace-sidebar"><div class="workspace-sidebar-head"><div><p class="eyebrow">${activeTab === "results" ? "Screening summary" : "Workspace view"}</p><h2>${escapeHtml(activeTab === "results" ? "Source findings" : activeTab === "reports" ? "Reports" : "Data sources")}</h2><span class="workspace-preliminary">${userAoi ? "AOI loaded · screening not run" : "Preliminary screening · no composite score"}</span></div><span class="workspace-sidebar-count">${formatNumber(rows.length, 0)} sources</span></div>${tabPanel}</aside></main>
   </div>`;
 };
 

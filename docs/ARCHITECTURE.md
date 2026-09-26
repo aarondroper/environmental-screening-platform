@@ -250,6 +250,17 @@ conclusions, and preserves the report's independent unknown/incomplete/
 unavailable states. Leaflet, its CSS, and marker assets are bundled into the
 static build so the map does not depend on a runtime CDN.
 
+The primary workspace has a frontend-only `Load AOI` session path for a local
+GeoJSON file or pasted GeoJSON document. It accepts only a valid, nonempty WGS84
+Polygon or MultiPolygon, computes bounds and a deterministic geometry hash, and
+fits the Leaflet map to the replacement geometry. This is presentation state,
+not a project/AOI persistence or acquisition path: it does not create an AOI
+revision, call providers, or run screening. The checked-in Washington, DC
+metrics, source states, and NLCD/3DEP display derivatives are cleared and
+replaced with explicit `not_evaluated` states for a different geometry. The
+recorded DC report remains the default/reset demonstration, and invalid or
+empty input is rejected without repair, clipping, or expansion.
+
 When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 
 ## Processing pipelines

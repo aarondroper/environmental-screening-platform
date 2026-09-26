@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { sourceRows, renderReport, renderScreeningReport, lifecycleState, candidateDispositionState, formatBytes } from "../src/app.mjs";
+import { createAoiContext, rebindReportToAoi } from "../src/aoi-input.mjs";
+
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const report = JSON.parse(await readFile(new URL("../public/demo/report.json", import.meta.url), "utf8"));
 
@@ -198,7 +202,7 @@ test("keeps the primary source list compact while retaining expandable evidence"
   assert.match(html, /100% AOI/);
   assert.match(html, /View source details and provenance/);
   assert.match(html, /class="workspace-info"/);
-  assert.doesNotMatch(html, new RegExp(report.aoi.geometry_sha256));
+  assert.match(html, new RegExp(report.aoi.geometry_sha256));
 });
 
 test("renders secondary data-source and activity views without changing the recorded data", () => {
@@ -233,4 +237,26 @@ test("keeps responsive layout hooks for desktop and mobile screening views", asy
   assert.match(css, /\.workspace-source-summary\s*\{\s*display: grid/);
   assert.match(css, /\.workspace-layer-control\s*>\s*summary/);
   assert.match(css, /\.workspace-tabs\s*\{\s*gap/);
+});
+
+test("offers file and pasted GeoJSON loading without making the compact map-first view technical", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /Load AOI/);
+  assert.match(html, /data-aoi-file/);
+  assert.match(html, /data-aoi-paste/);
+  assert.match(html, /data-aoi-error/);
+  assert.match(html, /AOI details/);
+});
+
+test("replacement AOIs show explicit not-evaluated states and no stale metrics or previews", async () => {
+  const context = await createAoiContext({ type: "Feature", geometry: { type: "Polygon", coordinates: [[[-80, 35], [-79.99, 35], [-79.99, 35.01], [-80, 35.01], [-80, 35]]] } });
+  const rebound = rebindReportToAoi(report, context);
+  const html = renderScreeningReport(rebound);
+  assert.match(html, /User-provided environmental screening/);
+  assert.match(html, /Not evaluated/);
+  assert.match(html, /Loaded AOI · source results not evaluated/);
+  assert.match(html, /Existing DC metrics and display previews are not reused/);
+  assert.doesNotMatch(html, /Valid pixels.*62/);
+  assert.doesNotMatch(html, /data-nlcd-visibility/);
+  assert.doesNotMatch(html, /data-3dep-visibility/);
 });

@@ -48,3 +48,10 @@ test("supports a provenance-checked 3DEP terrain overlay beneath the AOI boundar
   assert.match(map, /mountRasterPreview\(element, map, layer, aoi, previews\["3dep"\]/);
   assert.match(map, /boundary\.bringToFront\(\)/);
 });
+
+test("fits the interactive map to the loaded AOI bounds", async () => {
+  const map = await readFile(new URL("../src/map.mjs", import.meta.url), "utf8");
+  assert.match(map, /export const fitMapToAoi/);
+  assert.match(map, /fitMapToAoi\(map, layer\)/);
+  assert.match(map, /fitBounds\(boundary\.getBounds\(\)/);
+});

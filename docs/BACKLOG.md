@@ -143,6 +143,28 @@ show or convert elevation values. Source metrics and all other source behavior
 remain unchanged; no source promotion, composite score, or suitability
 interpretation was added.
 
+## Milestone 2B.26 — Frontend user-provided AOI loading
+
+**Status:** Implemented as a frontend-only session slice. The primary
+map-centric workspace accepts a local GeoJSON file or pasted GeoJSON document,
+validates one nonempty WGS84 Polygon/MultiPolygon without repairing, clipping,
+or expanding it, computes bounds and a deterministic geometry hash, and fits
+the Leaflet map to the loaded geometry.
+
+**Verified scope:** The recorded Washington, DC report remains the default and
+reset demonstration. When another AOI is loaded, its session geometry replaces
+the displayed AOI and all recorded DC metrics, source states, and NLCD/3DEP
+display derivatives are removed from the active presentation; NLCD, 3DEP,
+SSURGO, FEMA, and PAD-US are explicitly `Not evaluated` until an AOI-bound
+screening run exists. The loader exposes validation errors and AOI metadata in
+a secondary panel and does not add persistence, provider access, acquisition,
+screening, or backend behavior.
+
+**Explicit limits:** This does not create a durable AOI revision, generalize
+source acquisition, add AOI drawing, or make any source result current for a
+new geometry. The platform's persisted AOI and immutable revision workflow
+remains the authoritative path for future backend-bound screening.
+
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite

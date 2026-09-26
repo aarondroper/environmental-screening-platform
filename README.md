@@ -189,6 +189,17 @@ no environmental provider acquisition, backend processing, PostGIS access, raw
 source download, or new screening behavior. It does not present a composite
 score, safety/suitability conclusion, or regulatory determination.
 
+Use `Load AOI` in the primary workspace to choose a local GeoJSON file or paste
+GeoJSON. The browser accepts one valid, nonempty WGS84 Polygon or MultiPolygon,
+shows its bounds and deterministic geometry hash in the secondary AOI details,
+and fits the map to the loaded geometry. This is a display-only session action:
+it does not persist an AOI revision, acquire data, or run screening. Recorded
+Washington, DC metrics and NLCD/3DEP previews are not reused for a replacement
+geometry; sources are shown as `Not evaluated` and exports remain unavailable
+until an AOI-bound screening run exists. Invalid, empty, non-area, malformed,
+or self-intersecting input is rejected, while the DC demonstration remains the
+default and reset state.
+
 The report links to the secondary technical operations view at
 <http://localhost:8080/?view=operations>. That view projects the same report's
 plans, attempts, retries, candidates, promotions, and source lifecycle for
