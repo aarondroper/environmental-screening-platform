@@ -20,6 +20,28 @@
         { "value": 23, "label": "developed_medium_intensity", "color": "#eb0000" },
         { "value": 24, "label": "developed_high_intensity", "color": "#ab0000" }
       ]
+    },
+    "3dep": {
+      "status": "available",
+      "source_id": "3dep",
+      "asset_url": "demo/3dep-preview.png",
+      "metadata_url": "demo/3dep-preview.json",
+      "display_derivative": true,
+      "source_snapshot_id": "recorded-3dep-snapshot",
+      "source_version_id": "3dep:8c2fe1295ab36888786e77ab10a4af45d5d188965caa0c3bc6447de54c1ea94c",
+      "source_sha256": "8c67738d7c829e9f408958b61fb2526df94a645d89805389c248dac84a9f3d18",
+      "aoi_revision": 1,
+      "aoi_geometry_sha256": "216677406ea7cb6817db15c205ae9c4c952e425985dddf2149219eece6506fbc",
+      "tile_id": "n39w078",
+      "release": "USGS 3DEP 1/3 arc-second 2026-04-07",
+      "opacity_default": 0.42,
+      "default_visible": false,
+      "representation": "relative terrain hillshade",
+      "legend": [
+        { "label": "shaded relative relief", "color": "#263936" },
+        { "label": "intermediate illumination", "color": "#82978b" },
+        { "label": "illuminated relative relief", "color": "#ebebda" }
+      ]
     }
   },
   "project": {

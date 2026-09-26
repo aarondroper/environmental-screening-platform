@@ -35,6 +35,16 @@ test("supports a provenance-checked NLCD image overlay with controls", async () 
   assert.match(map, /imageOverlay/);
   assert.match(map, /overlay_bounds_wgs84/);
   assert.match(map, /data-nlcd-visibility/);
-  assert.match(map, /data-nlcd-opacity/);
+  assert.match(map, /data-\$\{key\}-opacity/);
   assert.match(map, /source version or checksum/);
+});
+
+test("supports a provenance-checked 3DEP terrain overlay beneath the AOI boundary", async () => {
+  const map = await readFile(new URL("../src/map.mjs", import.meta.url), "utf8");
+  assert.match(map, /data-3dep-visibility/);
+  assert.match(map, /data-\$\{key\}-opacity/);
+  assert.match(map, /3DEP terrain/);
+  assert.match(map, /zIndex/);
+  assert.match(map, /mountRasterPreview\(element, map, layer, aoi, previews\["3dep"\]/);
+  assert.match(map, /boundary\.bringToFront\(\)/);
 });

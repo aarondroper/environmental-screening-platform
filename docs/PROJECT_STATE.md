@@ -23,8 +23,9 @@ PAD-US/FEMA outcomes. The primary workspace keeps the Leaflet AOI map dominant,
 shows a compact collapsed layer-availability control, compact independent
 source findings, and primary tabs for Screening, Reports, and Data sources.
 The checked-in demonstration also renders a masked Annual NLCD 2025 display
-derivative with observed-class legend, opacity, and toggle controls; 3DEP
-remains metrics-only. Observed metrics are inline; hashes, IDs, and detailed
+derivative and an optional 3DEP relative-hillshade display derivative, each
+with opacity and toggle controls; 3DEP is disabled by default and exposes no
+vertical units, datum, or converted elevation values. Observed metrics are inline; hashes, IDs, and detailed
 provenance remain in the data-source details and separate operations view. The operations view
 exposes plans, attempts, checksums,
 validation, promotion, active versions, immutable snapshots, and lifecycle
@@ -42,6 +43,17 @@ matching provenance in `frontend/public/demo/nlcd-preview.json`. It was derived
 from the retained 863,154-byte source artifact without redownload; its metadata
 records source version/snapshot, source checksum, retrieval time, EPSG:5070
 transform and bounds, AOI revision/hash, and the WGS84 overlay bounds.
+
+The checked-in 3DEP display derivative is `frontend/public/demo/3dep-preview.png`
+(4,802 bytes, SHA-256
+`78200793a485a5c5208504f3eeaef5893cc12e37bcc9ef3ee0e8d4bb3d080607`), with
+matching provenance in `frontend/public/demo/3dep-preview.json`. It was derived
+from the retained 500,034,664-byte 3DEP tile without redownload; its metadata
+records source version/snapshot, tile URL/release/checksum, EPSG:4269 source
+transform/bounds/nodata, AOI revision/hash, native-cell AOI window bounds, and
+the hillshade transformation. The source raster does not declare vertical units
+or datum in its raster tags; the derivative therefore shows relative
+illumination only and leaves units/datum null.
 
 ## Implemented Milestone 2B slice
 

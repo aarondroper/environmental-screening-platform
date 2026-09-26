@@ -100,8 +100,9 @@ long technical explanations are kept out of the primary view and remain
 available through the Data Sources, Reports, Activity, and operations views.
 
 **Explicit limits:** The recorded AOI map and all source states/metrics are
-unchanged. At this point only the NLCD display derivative and AOI boundary are
-rendered; 3DEP remains metrics-only, and SSURGO, PAD-US, and FEMA retain their
+unchanged. At this milestone only the AOI boundary was rendered; later
+Milestone 2B.24 and 2B.25 add explicitly documented NLCD and 3DEP display
+derivatives. SSURGO, PAD-US, and FEMA retain their
 incomplete, conditional, unknown, or unavailable semantics. Mobile uses the
 existing scrollable workspace tabs and separate map/summary regions; this is
 not a new live application workflow.
@@ -121,6 +122,26 @@ unavailable state if metadata or the asset cannot be loaded. The PNG is a
 display derivative only; the source raster and screening metrics remain
 authoritative. No provider access, redownload, resampling, composite score, or
 3DEP/SSURGO/PAD-US/FEMA behavior changed.
+
+## Milestone 2B.25 — Browser-renderable 3DEP terrain preview
+
+**Status:** Implemented for the recorded Washington, DC demonstration. A
+4,802-byte RGBA PNG is generated from the retained validated 3DEP GeoTIFF,
+windowed around the exact immutable AOI at native source-cell spacing and
+masked so outside-AOI and nodata cells are transparent. The checked-in metadata
+records the source tile/release URL, source version/snapshot, 500,034,664-byte
+source checksum, EPSG:4269 transform/bounds/nodata, AOI revision/hash, preview
+window bounds, and hillshade transformation.
+
+The primary Leaflet map presents the 3DEP derivative under a compact
+“Screening layers” control with an opacity slider, toggle, muted relative-
+hillshade legend, AOI boundary-on-top ordering, and explicit metadata/asset
+failure handling. It is disabled by default so the NLCD layer remains readable.
+The retained raster does not declare vertical units or datum in its raster
+metadata, so the derivative displays relative illumination only and does not
+show or convert elevation values. Source metrics and all other source behavior
+remain unchanged; no source promotion, composite score, or suitability
+interpretation was added.
 
 ## Milestone 1 — Geography and source feasibility
 

@@ -150,9 +150,16 @@ test("keeps the persistent layer control truthful about rendered and non-rendere
   assert.match(html, /Annual NLCD 2025.*Display preview/);
   assert.match(html, /data-nlcd-visibility/);
   assert.match(html, /data-nlcd-opacity/);
+  assert.match(html, /Screening layers/);
+  assert.match(html, /data-3dep-visibility/);
+  assert.match(html, /data-3dep-opacity/);
+  assert.match(html, /3DEP terrain.*Available · click to show/);
+  assert.match(html, /terrain-legend/);
+  assert.match(html, /Illumination only; no elevation value, unit, or datum is displayed/);
   assert.match(html, /nlcd-legend/);
   assert.match(html, /developed_high_intensity/);
-  assert.match(html, /USGS 3DEP.*Metrics only/);
+  assert.match(html, /USGS 3DEP/);
+  assert.match(html, /3DEP terrain preview/);
   assert.match(html, /NRCS SSURGO.*Incomplete/);
   assert.match(html, /PAD-US.*Conditional \/ unknown/);
   assert.match(html, /FEMA NFHL.*Unavailable \/ blocked/);
@@ -165,6 +172,23 @@ test("renders the NLCD preview as optional and honest when its metadata is absen
   assert.doesNotMatch(html, /data-nlcd-visibility/);
   assert.match(html, /Annual NLCD 2025.*Metrics only/);
   assert.match(html, /no browser-ready raster overlay is included/);
+});
+
+test("renders the 3DEP preview as an optional terrain layer with honest metadata limits", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /3DEP terrain/);
+  assert.match(html, /data-3dep-visibility/);
+  assert.match(html, /data-3dep-opacity/);
+  assert.match(html, /relative hillshade/);
+  assert.match(html, /no elevation value, unit, or datum/);
+  assert.doesNotMatch(html, /3DEP terrain.*checked data-3dep-visibility/);
+});
+
+test("keeps 3DEP metrics-only when the browser preview is unavailable", () => {
+  const withoutPreview = { ...report, browser_previews: { annual_nlcd: report.browser_previews.annual_nlcd } };
+  const html = renderScreeningReport(withoutPreview);
+  assert.doesNotMatch(html, /data-3dep-visibility/);
+  assert.match(html, /3DEP terrain.*Metrics only · no preview/);
 });
 
 test("keeps the primary source list compact while retaining expandable evidence", () => {
@@ -187,6 +211,8 @@ test("renders secondary data-source and activity views without changing the reco
   assert.match(sources, /recorded-nlcd-snapshot/);
   assert.match(sources, /Display derivative/);
   assert.match(sources, /demo\/nlcd-preview\.json/);
+  assert.match(sources, /3DEP terrain preview/);
+  assert.match(sources, /demo\/3dep-preview\.json/);
   assert.doesNotMatch(sources, /Activity \/ provenance/);
 });
 

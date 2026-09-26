@@ -232,13 +232,14 @@ screening workspace with a compact one-row project/AOI header, a collapsed
 layer-availability control, independent compact source findings, and primary
 tabs for Screening, Reports, and Data sources. Technical provenance is kept in
 the separate operations route and expandable data-source details. The
-workspace uses the recorded AOI geometry and the masked Annual NLCD 2025
-display derivative in the checked-in fixture; 3DEP remains metrics-only
-because no browser-ready 3DEP overlay is in the report. The NLCD derivative is
-loaded from checked-in PNG/metadata assets, preserves source
-version/checksum/AOI lineage, uses WGS84 bounds derived from the EPSG:5070
-raster footprint, and renders only valid AOI pixels with nodata and
-outside-AOI pixels transparent. `?view=operations` opens the secondary
+workspace uses the recorded AOI geometry, masked Annual NLCD 2025 display
+derivative, and optional 3DEP relative-hillshade display derivative in the
+checked-in fixture. The 3DEP derivative is disabled by default and does not
+expose vertical units, datum, or converted elevation values when the source
+raster does not declare them. Both derivatives are loaded from checked-in
+PNG/metadata assets, preserve source version/checksum/AOI lineage, use WGS84
+bounds derived from their source raster windows, and render only valid AOI
+pixels with nodata and outside-AOI pixels transparent. `?view=operations` opens the secondary
 technical operations view
 with plans, attempts, candidates, promotions, and lifecycle detail. Neither route acquires data or connects to
 SQLite, PostGIS, or an API; the primary route does request public OpenStreetMap
