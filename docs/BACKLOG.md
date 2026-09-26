@@ -90,6 +90,21 @@ algorithm, API, or live processing. The map renders only the recorded AOI
 geometry, NLCD/3DEP remain metrics-only, and all source limitations and
 unknown states remain explicit.
 
+## Milestone 2B.23 — Primary screening workspace usability pass
+
+**Status:** Implemented. The primary workspace now uses a shorter shell/header,
+compact source rows with inline observed metrics and collapsed details, a
+collapsible layer control with an AOI visibility toggle, and a compact
+interpretation-limits disclosure. Geometry hashes, source IDs, checksums, and
+long technical explanations are kept out of the primary view and remain
+available through the Data Sources, Reports, Activity, and operations views.
+
+**Explicit limits:** The recorded AOI map and all source states/metrics are
+unchanged. Only the AOI boundary is rendered; NLCD/3DEP remain metrics-only,
+and SSURGO, PAD-US, and FEMA retain their incomplete, conditional, unknown, or
+unavailable semantics. Mobile uses the existing scrollable workspace tabs and
+separate map/summary regions; this is not a new live application workflow.
+
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite

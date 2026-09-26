@@ -22,7 +22,9 @@ screening evidence, an incomplete/rejected SSURGO package path, and status-only
 PAD-US/FEMA outcomes. The primary workspace keeps the Leaflet AOI map dominant,
 shows a persistent truthful layer-availability control, compact independent
 source findings, and secondary tabs for reports/exports, data sources, and
-technical provenance. The operations view exposes plans, attempts, checksums,
+technical provenance. The primary results view uses compact collapsed source
+rows with observed metrics inline; hashes, IDs, and detailed provenance remain
+in secondary views. The operations view exposes plans, attempts, checksums,
 validation, promotion, active versions, immutable snapshots, and lifecycle
 detail. `npm test` and `npm run build` are
 the local frontend checks; serving `frontend/dist` is a static preview only. No

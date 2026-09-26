@@ -176,6 +176,9 @@ control renders the AOI boundary and truthfully identifies NLCD/3DEP as
 metrics-only; SSURGO, PAD-US, and FEMA remain incomplete, conditional, or
 unavailable rather than being represented by invented overlays. Secondary tabs
 expose reports/exports, data-source availability, and technical provenance.
+The primary results list is intentionally compact: observed metrics are shown
+inline, source details are expandable, and hashes, IDs, and operational
+history stay in the secondary technical views.
 The browser needs network access for basemap tiles, but the workspace performs
 no environmental provider acquisition, backend processing, PostGIS access, raw
 source download, or new screening behavior. It does not present a composite

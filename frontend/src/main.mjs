@@ -17,7 +17,12 @@ fetch("demo/report.json")
     document.title = `${report.project?.name || "Environmental Screening"} | ${operations ? "Operations" : "Screening Report"}`;
     if (!operations) {
       try {
-        mountAoiMap(root.querySelector("[data-aoi-map]"), report.aoi);
+        const mountedMap = mountAoiMap(root.querySelector("[data-aoi-map]"), report.aoi);
+        const visibility = root.querySelector("[data-aoi-visibility]");
+        visibility?.addEventListener("change", () => {
+          if (visibility.checked) mountedMap.layer.addTo(mountedMap.map);
+          else mountedMap.map.removeLayer(mountedMap.layer);
+        });
       } catch (error) {
         const status = root.querySelector("[data-map-status]");
         if (status) {

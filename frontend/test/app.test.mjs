@@ -97,9 +97,9 @@ test("renders the environmental screening workspace as the primary map-centric e
   assert.match(html, /data-screening-source="fema_nfhl"/);
   assert.match(html, /data-screening-source="padus"/);
   assert.match(html, /class="aoi-map"/);
-  assert.match(html, /Recorded AOI geometry/);
+  assert.match(html, /Recorded AOI geometry boundary/);
   assert.match(html, /Technical operations view/);
-  assert.match(html, /No composite environmental score/);
+  assert.match(html, /No composite score/);
   assert.match(html, /Recorded AOI geometry boundary/);
 });
 
@@ -128,10 +128,13 @@ test("renders unavailable, incomplete, rejected, conditional, unknown, and nodat
 
 test("provides provenance disclosures and only claims available export artifacts", () => {
   const html = renderScreeningReport(report);
-  assert.match(html, /Source provenance and details/);
-  assert.match(html, /annual_nlcd:a8bcc633fd343366a5a135a3390eb02b8ecb21ce14ecd1f263a1886f9a344284/);
-  assert.match(html, /recorded-nlcd-snapshot/);
+  assert.match(html, /View source details and provenance/);
+  assert.doesNotMatch(html, /annual_nlcd:a8bcc633fd343366a5a135a3390eb02b8ec1f263a1886f9a344284/);
   assert.match(html, /Export JSON/);
+  const sources = renderScreeningReport(report, "sources");
+  assert.match(sources, /Version and provenance/);
+  assert.match(sources, /annual_nlcd:a8bcc633fd343366a5a135a3390eb02b8ecb21ce14ecd1f263a1886f9a344284/);
+  assert.match(sources, /recorded-nlcd-snapshot/);
   const exports = renderScreeningReport(report, "reports");
   assert.match(exports, /Download JSON report/);
   assert.match(exports, /CSV not included in fixture/);
@@ -140,7 +143,8 @@ test("provides provenance disclosures and only claims available export artifacts
 
 test("keeps the persistent layer control truthful about rendered and non-rendered sources", () => {
   const html = renderScreeningReport(report);
-  assert.match(html, /Map layer availability/);
+  assert.match(html, /class="workspace-layer-control" aria-label="Map layer availability" open/);
+  assert.match(html, /data-aoi-visibility/);
   assert.match(html, /AOI boundary/);
   assert.match(html, /Annual NLCD 2025.*Metrics only/);
   assert.match(html, /USGS 3DEP.*Metrics only/);
@@ -148,6 +152,16 @@ test("keeps the persistent layer control truthful about rendered and non-rendere
   assert.match(html, /PAD-US.*Conditional \/ unknown/);
   assert.match(html, /FEMA NFHL.*Unavailable \/ blocked/);
   assert.match(html, /no browser-ready raster overlay is included/);
+});
+
+test("keeps the primary source list compact while retaining expandable evidence", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /class="workspace-source" data-screening-source="annual_nlcd"/);
+  assert.match(html, /class="workspace-source-summary"/);
+  assert.match(html, /100% AOI/);
+  assert.match(html, /View source details and provenance/);
+  assert.match(html, /class="workspace-info"/);
+  assert.doesNotMatch(html, new RegExp(report.aoi.geometry_sha256));
 });
 
 test("renders secondary data-source and activity views without changing the recorded data", () => {
@@ -178,4 +192,7 @@ test("keeps responsive layout hooks for desktop and mobile screening views", asy
   assert.match(css, /@media \(max-width: 800px\)/);
   assert.match(css, /@media \(max-width: 560px\)/);
   assert.match(css, /\.screening-grid\s*\{\s*grid-template-columns: 1fr/);
+  assert.match(css, /\.workspace-source-summary\s*\{\s*display: grid/);
+  assert.match(css, /\.workspace-layer-control\s*>\s*summary/);
+  assert.match(css, /\.workspace-tabs\s*\{\s*gap/);
 });
