@@ -2,7 +2,7 @@
 
 ## Snapshot status
 
-Verified on 2026-09-26 after runtime verification of the Milestone 2B.4 AOI boundary, Milestone 2B.5 representative SSURGO fixture, bounded Milestone 2B.6 SSURGO screening consumption, snapshot-pinned Annual NLCD and 3DEP fixture screening, the bounded unified fixture orchestration, automated regional Annual NLCD acquisition, read-only parsing QA, the diagnostic audit, owner-approved derived staging of the 19 acquired SSURGO packages, inactive catalog materialization of that staging result, read-only regional SSURGO coverage/seam analysis, explicit inactive SSURGO candidate disposition, the first AOI-agnostic boundary refactor, generic NLCD acquisition, generic 3DEP tile planning/acquisition, and a live generic SSURGO DC001 package smoke. This checkout contains a small Python CLI/workflow, a SQLite source metadata catalog, immutable per-job source snapshots, an optional PostGIS spatial repository/migration boundary, and deterministic tests. It is a local prototype, not the deployed PostGIS/API/worker/web platform described by the product brief. Source maturity labels below remain bounded to their prior validation scopes; ingestion, job snapshot, fixture-only promotion, fixture screening, regional NLCD acquisition, generic tile planning, generic package acquisition, package QA, discrepancy diagnostics, derived staging, inactive candidate materialization, coverage analysis, or candidate disposition does not constitute final Milestone 1 source approval.
+Verified on 2026-09-26 after runtime verification of the Milestone 2B.4 AOI boundary, Milestone 2B.5 representative SSURGO fixture, bounded Milestone 2B.6 SSURGO screening consumption, snapshot-pinned Annual NLCD and 3DEP fixture screening, the bounded unified fixture orchestration, automated regional Annual NLCD acquisition, read-only parsing QA, the diagnostic audit, owner-approved derived staging of the 19 acquired SSURGO packages, inactive catalog materialization of that staging result, read-only regional SSURGO coverage/seam analysis, explicit inactive SSURGO candidate disposition, the first AOI-agnostic boundary refactor, generic NLCD acquisition, generic 3DEP tile planning/acquisition, a live generic SSURGO DC001 package smoke, and the local NLCD screening bridge. This checkout contains a small Python CLI/workflow, a SQLite source metadata catalog, immutable per-job source snapshots, an optional PostGIS spatial repository/migration boundary, a development-only standard-library HTTP bridge, and deterministic tests. It is a local prototype, not the deployed PostGIS/API/worker/web platform described by the product brief. Source maturity labels below remain bounded to their prior validation scopes; ingestion, job snapshot, fixture-only promotion, fixture screening, regional NLCD acquisition, generic tile planning, generic package acquisition, package QA, discrepancy diagnostics, derived staging, inactive candidate materialization, coverage analysis, candidate disposition, or the local bridge does not constitute final Milestone 1 source approval.
 
 ## Verified repository and Git state
 
@@ -36,15 +36,16 @@ authentication, worker, or new screening behavior was added. The primary map
 requests attributed public OpenStreetMap tiles and reports a visible error if
 the basemap cannot load.
 
-The primary workspace also supports a frontend-only `Load AOI` session action.
-It accepts a pasted GeoJSON document or local GeoJSON file containing one valid,
-nonempty WGS84 Polygon or MultiPolygon, computes bounds and a deterministic
-geometry hash, and fits the Leaflet map to the loaded geometry. A replacement
-AOI is not persisted or screened in this slice: all recorded Washington, DC
-NLCD, 3DEP, SSURGO, FEMA, and PAD-US results and display derivatives are
-cleared from the active presentation and shown as `Not evaluated` until a
-future AOI-bound screening run exists. Invalid, empty, non-area, malformed, or
-self-intersecting input is rejected in the secondary loader panel; the DC
+The primary workspace supports a local `Load AOI` session action. In static
+preview mode it accepts a pasted GeoJSON document or local GeoJSON file
+containing one valid, nonempty WGS84 Polygon or MultiPolygon, computes bounds
+and a deterministic browser geometry hash, and fits the Leaflet map to the
+loaded geometry. A replacement AOI is not persisted or screened in static
+preview: all recorded Washington, DC NLCD, 3DEP, SSURGO, FEMA, and PAD-US
+results and display derivatives are cleared from the active presentation and
+shown as `Not evaluated`. Through `screening serve`, `Run screening` persists
+the loaded AOI and runs Annual NLCD only. Invalid, empty, non-area, malformed,
+or self-intersecting input is rejected in the secondary loader panel; the DC
 demonstration remains the default and reset state.
 
 The checked-in NLCD display derivative is `frontend/public/demo/nlcd-preview.png`
@@ -70,9 +71,9 @@ illumination only and leaves units/datum null.
 
 | Area | Verified behavior | Boundary / not yet implemented |
 | --- | --- | --- |
-| Python package and CLI | `pyproject.toml`, editable install, `screening` entry point; project/AOI/screening/export plus source ingest, retry, version/run/candidate inspection, explicit promotion, active-version, bounded `screen-ssurgo-fixture`, `screen-nlcd-fixture`, `screen-3dep-fixture`, and `screen-fixtures` commands | No web/API entry point |
+| Python package and CLI | `pyproject.toml`, editable install, `screening` entry point; project/AOI/screening/export plus source ingest, retry, version/run/candidate inspection, explicit promotion, active-version, bounded fixture commands, and the development-only `serve` command | No deployed API, authentication, queue, or hosted service |
 | Geography | The named Northern Colorado regression policy fetches/caches the official 2025 TIGER/Line county archive and validates CRS, GEOIDs 08013/08069/08123, and the exact 3-component union; the generic policy does not require this boundary | Official fixture route is the national county ZIP (about 84 MB), then only the three records are normalized; no silent fixture narrowing |
-| Projects/AOIs | External JSON records; generic valid nonempty WGS84 Polygon/MultiPolygon validation; optional named containment policy; immutable revisions, input hash, and policy provenance | No account/auth model, uploads, map UI, or database persistence; SSURGO staging, raster mosaicking, and UI/API AOI drawing are not implemented |
+| Projects/AOIs | External JSON records; generic valid nonempty WGS84 Polygon/MultiPolygon validation; optional named containment policy; immutable revisions, input hash, and policy provenance; local bridge creation from validated GeoJSON | No account/auth model or hosted upload API; browser AOI loading remains session-only until the local bridge is used; SSURGO staging and raster mosaicking remain separate |
 | Jobs | File-backed `queued → processing → completed/failed`, attempt records, immutable completed result, retry of failed jobs with the same AOI revision; every requested source is snapshotted before processing and results/exports include snapshot IDs and source-version states; `screen-fixtures` adds a five-source matrix and partial/fixture-only outcome | Job execution is job-oriented but the CLI runs the worker synchronously; no queue, concurrent worker coordination, cancellation, or transactional database for project/job/result records (the separate source metadata catalog is SQLite) |
 | Raw acquisition/provenance | HTTPS-only bounded requests, same-host redirects, bounded retries for selected transient HTTP/network failures, content-addressed raw bytes, append-only acquisition event records with URL/request, retrieval time, release, bytes, terms URL and checksum | No conditional requests, broad provider pagination, or archival retention policy |
 | Source version and ingestion catalog | Backend-neutral repository protocol with local SQLite metadata store outside Git; durable ingestion runs/retries, acquisition attempts, checksum/release versions, candidate artifact and validation records, promotion decisions, per-source active pointer, and immutable per-job source snapshots | Catalog tracks source metadata/control only; PostGIS uses explicit copied identifiers rather than cross-database foreign keys. Screening reads the job snapshot and does not acquire or substitute a newer candidate; SQLite is a local bridge, not the hosted database design |
@@ -156,7 +157,7 @@ The known-good regression/demo geography remains Boulder County (08013), Larimer
 
 ## Current development frontier
 
-Milestone 2B.1's first local ETL path, 2B.2's durable metadata catalog/candidate-promotion workflow, 2B.3's immutable screening-job source snapshot binding, 2B.4's local PostGIS AOI boundary, 2B.5's representative SSURGO spatial fixture, 2B.6's bounded fixture-only SSURGO screening consumption, snapshot-pinned Annual NLCD and 3DEP fixture screening, the bounded five-source `screen-fixtures` orchestration, automated regional Annual NLCD acquisition/validation, regional SSURGO package QA, discrepancy audit, owner-approved derived staging, inactive staged-candidate materialization, read-only regional coverage/seam analysis, explicit inactive candidate disposition, generic NLCD acquisition, generic 3DEP tile planning/acquisition, and generic SSURGO package discovery/acquisition are implemented. The SSURGO regional candidate is rejected for promotion and remains inactive; final Milestone 1 approval remains open for PAD-US regional validation and FEMA technical/effective-pending access. NLCD/3DEP/SSURGO screening fixtures remain explicitly partial/fixture-only; regional and generic candidates are validation-only and not active; no PAD-US/FEMA claims are made. API/queue/web platform, deployment, SSURGO staging/mosaicking, arbitrary-AOI regional coverage, and production refresh remain future work.
+Milestone 2B.1's first local ETL path, 2B.2's durable metadata catalog/candidate-promotion workflow, 2B.3's immutable screening-job source snapshot binding, 2B.4's local PostGIS AOI boundary, 2B.5's representative SSURGO spatial fixture, 2B.6's bounded fixture-only SSURGO screening consumption, snapshot-pinned Annual NLCD and 3DEP fixture screening, the bounded five-source `screen-fixtures` orchestration, automated regional Annual NLCD acquisition/validation, regional SSURGO package QA, discrepancy audit, owner-approved derived staging, inactive staged-candidate materialization, read-only regional coverage/seam analysis, explicit inactive candidate disposition, generic NLCD acquisition, generic 3DEP tile planning/acquisition, generic SSURGO package discovery/acquisition, and the local generic-AOI NLCD screening bridge are implemented. The SSURGO regional candidate is rejected for promotion and remains inactive; final Milestone 1 approval remains open for PAD-US regional validation and FEMA technical/effective-pending access. NLCD/3DEP/SSURGO screening fixtures remain explicitly partial/fixture-only; regional and generic candidates are validation-only and not active; no PAD-US/FEMA claims are made. A deployed API/queue/web platform, authentication, deployment, SSURGO staging/mosaicking, arbitrary-AOI regional coverage, and production refresh remain future work.
 
 No composite score, regulatory determination, wetland finding, FEMA flood determination, or safety/suitability conclusion is implemented or permitted. Missing, unavailable, pending, incomplete, or quarantined data are never serialized as zero/absence. The Northern Colorado regression fixture is not narrowed.
 
@@ -200,3 +201,30 @@ The external manifest records both successful artifacts, the retained failed NLC
 **Verified scope:** The report preserves AOI policy/area/geometry hash, deterministic parent plans, selected sources, child acquisition attempts and retry lineage, planned/acquired counts, bytes, checksums, source versions, validation/candidate/promotion states, active AOI-scoped versions, screening jobs and immutable snapshots, source outcomes, timestamps, warnings, and failure reasons. Each source has an independent lifecycle stopping point and explicit failed, incomplete, unavailable, unknown, quarantined, blocked, or rejected details where present. The projection is read-only and uses no provider access or parallel persistence model.
 
 **Explicit limits:** This is an operational evidence report, not a new screening or source-validation workflow. It does not change source maturity, acquire data, promote candidates, alter screening semantics, or provide an overall suitability conclusion.
+
+## Milestone 2B.27 — Local generic-AOI Annual NLCD screening bridge
+
+**Status:** Implemented with deterministic orchestration and frontend state
+tests. The development-only `screening serve` command serves the built static
+workspace and a same-origin standard-library HTTP bridge. `POST
+/api/screening/nlcd` accepts a validated GeoJSON AOI, persists a generic
+project and immutable AOI revision, creates a deferred source-snapshot job,
+and invokes the existing generic Annual NLCD acquisition, validation,
+AOI-scoped promotion, snapshot binding, and active-raster screening workflow.
+
+**Verified scope:** The bridge exposes queued, running, succeeded, and failed
+states; preserves failed acquisition attempts; retries only failed bridge jobs
+without changing the AOI revision; and returns a report with exact AOI
+revision/hash, source snapshot/version, candidate, ingestion-run, artifact
+checksum, and independent NLCD result lineage. The frontend `Run screening`
+action sends the currently loaded geometry to this bridge. The presentation
+rejects stored metrics if result identity, AOI hash, source snapshot/version,
+candidate/run lineage, checksum, or retained artifact no longer matches.
+
+**Explicit limits:** This is a local development bridge, not a deployed API,
+queue, authentication boundary, or production worker. Annual NLCD is the only
+source acquired or screened in this slice. 3DEP, SSURGO, FEMA, and PAD-US are
+returned as not evaluated; no DC demonstration metrics are reused for a user
+AOI, and no composite, safety, suitability, wetlands, flood, or regulatory
+conclusion is produced. Existing fixture aliases and the secondary operations
+route are unchanged.

@@ -502,6 +502,10 @@ def _job_outcome(source_results: list[dict[str, Any]], *, fixture_mode: bool) ->
 
 def _parse_aoi(path: Path) -> tuple[Any, str]:
     raw = path.read_bytes()
+    return _parse_aoi_bytes(raw)
+
+
+def _parse_aoi_bytes(raw: bytes) -> tuple[Any, str]:
     data = json.loads(raw)
     if "crs" in data:
         crs_data = data["crs"]
@@ -537,22 +541,21 @@ def _validate_aoi(
     return selected_policy.validate(geom, boundary_geometry=boundary)
 
 
-def create_project(
+def _create_project_from_geometry(
     name: str,
-    aoi_path: Path,
+    geom: Any,
+    input_hash: str,
     data_root: Path,
-    session: requests.Session | None = None,
     *,
-    validation_policy: AoiValidationPolicy | None = None,
+    validation_policy: AoiValidationPolicy,
+    session: requests.Session | None = None,
 ) -> dict[str, Any]:
     if not name.strip():
         raise ValueError("Project name cannot be blank")
     data_root = _ensure_external_data_root(data_root)
     session = session or requests.Session()
-    selected_policy = validation_policy or policy_by_id(None)
-    boundary = _load_boundary(session, data_root) if selected_policy.boundary_required else None
-    geom, input_hash = _parse_aoi(aoi_path)
-    spatial = _validate_aoi(geom, boundary, policy=selected_policy)
+    boundary = _load_boundary(session, data_root) if validation_policy.boundary_required else None
+    spatial = _validate_aoi(geom, boundary, policy=validation_policy)
     project_id = _id()
     aoi_id = _id()
     project = {
@@ -561,7 +564,7 @@ def create_project(
         "created_at": utc_now(),
         "current_aoi_id": aoi_id,
         "current_aoi_revision": 1,
-        "aoi_validation_policy": selected_policy.policy_id,
+        "aoi_validation_policy": validation_policy.policy_id,
     }
     revision = {
         "aoi_id": aoi_id,
@@ -572,12 +575,51 @@ def create_project(
         "geometry_sha256": hashlib.sha256(geom.wkb).hexdigest(),
         "geometry": mapping(geom),
         "spatial_validation": spatial,
-        "validation_policy": selected_policy.policy_id,
+        "validation_policy": validation_policy.policy_id,
     }
     paths = _repository_paths(data_root)
     write_json(paths["projects"] / project_id / "project.json", project)
     write_json(paths["projects"] / project_id / "aoi-revisions" / f"{aoi_id}.json", revision)
     return {"project": project, "aoi_revision": revision}
+
+
+def create_project_from_geojson(
+    name: str,
+    geojson: dict[str, Any],
+    data_root: Path,
+    *,
+    validation_policy: AoiValidationPolicy | None = None,
+) -> dict[str, Any]:
+    """Persist a generic project/AOI directly from an already received GeoJSON object."""
+    raw = json.dumps(geojson, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    geom, input_hash = _parse_aoi_bytes(raw)
+    return _create_project_from_geometry(
+        name,
+        geom,
+        input_hash,
+        data_root,
+        validation_policy=validation_policy or policy_by_id(None),
+    )
+
+
+def create_project(
+    name: str,
+    aoi_path: Path,
+    data_root: Path,
+    session: requests.Session | None = None,
+    *,
+    validation_policy: AoiValidationPolicy | None = None,
+) -> dict[str, Any]:
+    selected_policy = validation_policy or policy_by_id(None)
+    geom, input_hash = _parse_aoi(aoi_path)
+    return _create_project_from_geometry(
+        name,
+        geom,
+        input_hash,
+        data_root,
+        validation_policy=selected_policy,
+        session=session,
+    )
 
 
 def revise_aoi(
@@ -625,6 +667,7 @@ def create_job(
     source_ids: Sequence[str] = SCREENING_SOURCES,
     screening_mode: str = "standard",
     require_aoi_scoped_active: bool = False,
+    defer_source_snapshot: bool = False,
 ) -> dict[str, Any]:
     data_root = _ensure_external_data_root(data_root)
     paths = _repository_paths(data_root)
@@ -670,20 +713,57 @@ def create_job(
         "error": None,
         "source_attempts": [],
     }
+    if not defer_source_snapshot:
+        snapshots = SQLiteSourceRepository(data_root).create_job_snapshots(
+            job_id=job_id,
+            project_id=project_id,
+            aoi_id=selected_aoi,
+            aoi_revision=int(revision["revision"]),
+            source_ids=selected_sources,
+            require_aoi_scoped_active=require_aoi_scoped_active or screening_mode == "active_aoi",
+            aoi_geometry_sha256=str(revision["geometry_sha256"]),
+        )
+        snapshot_by_source = {snapshot["source_id"]: snapshot for snapshot in snapshots}
+        job["source_snapshot_ids"] = [
+            snapshot_by_source[source_id]["snapshot_id"] for source_id in selected_sources
+        ]
+    else:
+        job["source_snapshot_ids"] = []
+        job["snapshot_deferred"] = True
+    write_json(paths["jobs"] / job_id / "job.json", job)
+    return job
+
+
+def bind_job_snapshots(
+    job_id: str,
+    data_root: Path,
+    *,
+    require_aoi_scoped_active: bool = True,
+) -> dict[str, Any]:
+    """Bind a deferred job to its exact active source versions before processing."""
+    data_root = _ensure_external_data_root(data_root)
+    paths = _repository_paths(data_root)
+    job_path = paths["jobs"] / job_id / "job.json"
+    job = read_json(job_path)
+    existing = SQLiteSourceRepository(data_root).get_job_snapshots(job_id)
+    if existing:
+        return job
+    revision = read_json(
+        paths["projects"] / job["project_id"] / "aoi-revisions" / f"{job['aoi_id']}.json"
+    )
     snapshots = SQLiteSourceRepository(data_root).create_job_snapshots(
         job_id=job_id,
-        project_id=project_id,
-        aoi_id=selected_aoi,
-        aoi_revision=int(revision["revision"]),
-        source_ids=selected_sources,
-        require_aoi_scoped_active=require_aoi_scoped_active or screening_mode == "active_aoi",
+        project_id=job["project_id"],
+        aoi_id=job["aoi_id"],
+        aoi_revision=int(job["aoi_revision"]),
+        source_ids=list(job["source_ids"]),
+        require_aoi_scoped_active=require_aoi_scoped_active,
         aoi_geometry_sha256=str(revision["geometry_sha256"]),
     )
-    snapshot_by_source = {snapshot["source_id"]: snapshot for snapshot in snapshots}
-    job["source_snapshot_ids"] = [
-        snapshot_by_source[source_id]["snapshot_id"] for source_id in selected_sources
-    ]
-    write_json(paths["jobs"] / job_id / "job.json", job)
+    job["source_snapshot_ids"] = [snapshot["snapshot_id"] for snapshot in snapshots]
+    job["snapshot_deferred"] = False
+    job["updated_at"] = utc_now()
+    write_json(job_path, job)
     return job
 
 

@@ -165,6 +165,29 @@ source acquisition, add AOI drawing, or make any source result current for a
 new geometry. The platform's persisted AOI and immutable revision workflow
 remains the authoritative path for future backend-bound screening.
 
+## Milestone 2B.27 — Local generic-AOI Annual NLCD screening bridge
+
+**Status:** Implemented with deterministic Python and frontend tests.
+
+The development-only `screening serve` command serves the built workspace and
+provides a same-origin standard-library bridge. Its NLCD endpoint accepts the
+validated loaded GeoJSON AOI, persists a generic project and immutable AOI
+revision, creates a deferred source-snapshot job, and delegates acquisition,
+validation, AOI-scoped promotion, snapshot binding, and active-raster
+screening to the existing workflows. It returns queued/running/succeeded/
+failed status, preserves failed attempts, supports retry without replacing the
+AOI revision, and rejects presentation of stale result lineage. The frontend
+`Run screening` action uses this endpoint; successful reports retain exact AOI,
+source-version, snapshot, candidate, ingestion-run, artifact, and checksum
+identity.
+
+**Limits:** This is a local development bridge, not a deployed API, queue,
+authentication boundary, or production worker. Annual NLCD is the only source
+acquired or screened. 3DEP, SSURGO, FEMA, and PAD-US remain not evaluated for
+these jobs, no browser preview is generated, and no composite or regulatory
+conclusion is produced. Existing DC demo, fixture aliases, and operations
+route remain unchanged.
+
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite

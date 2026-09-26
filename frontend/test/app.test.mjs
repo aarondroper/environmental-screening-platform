@@ -105,6 +105,21 @@ test("renders the environmental screening workspace as the primary map-centric e
   assert.match(html, /Technical view/);
   assert.match(html, /No composite score/);
   assert.match(html, /Recorded AOI boundary/);
+  assert.match(html, /data-run-screening/);
+  assert.match(html, /Run screening/);
+});
+
+test("renders queued, running, succeeded, and failed screening states without inventing metrics", () => {
+  for (const status of ["queued", "running", "succeeded", "failed"]) {
+    const html = renderScreeningReport({
+      ...report,
+      aoi_context: { ...report.aoi_context, origin: "user_provided" },
+      screening_run: { status, phase: status, job_id: "job-1" },
+    });
+    assert.match(html, /data-screening-status/);
+    assert.match(html, new RegExp(status === "succeeded" ? "Screened" : status[0].toUpperCase() + status.slice(1)));
+    assert.match(html, /Run screening|Annual NLCD/);
+  }
 });
 
 test("shows recorded NLCD and 3DEP metrics without inventing a cross-source result", () => {

@@ -55,3 +55,11 @@ test("fits the interactive map to the loaded AOI bounds", async () => {
   assert.match(map, /fitMapToAoi\(map, layer\)/);
   assert.match(map, /fitBounds\(boundary\.getBounds\(\)/);
 });
+
+test("wires the loaded AOI to the local NLCD screening bridge", async () => {
+  const main = await readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /data-run-screening/);
+  assert.match(main, /\/api\/screening\/nlcd/);
+  assert.match(main, /\/api\/screening-jobs/);
+  assert.match(main, /rebindReportToAoi\(recordedReport, context\)/);
+});

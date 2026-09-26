@@ -66,6 +66,8 @@ td small, th small { display: block; margin-top: 5px; }
 .badge-unavailable, .badge-failed, .badge-rejected, .badge-blocked { color: var(--danger); background: var(--danger-soft); }
 .badge-quarantined { color: var(--warning); background: #f8ead0; }
 .badge-not_started { color: var(--muted); background: #edf0ef; }
+.badge-queued, .badge-running { color: var(--blue); background: var(--blue-soft); }
+.badge-succeeded { color: var(--accent); background: var(--accent-soft); }
 .source-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; align-items: start; }
 .source-card { padding: 22px; min-width: 0; }
 .source-card-heading { align-items: center; margin-bottom: 20px; }
@@ -249,7 +251,7 @@ footer a { color: var(--accent); font-weight: 700; }
 .workspace-activity dt { color: var(--muted); font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
 .workspace-activity dd { margin: 3px 0 0; font-size: .72rem; overflow-wrap: anywhere; }
 .workspace-footer { flex: 0 0 auto; min-height: 30px; padding: 5px 22px 8px; font-size: .65rem; }
-.workspace-shell a:focus-visible, .workspace-shell summary:focus-visible, .workspace-shell input:focus-visible { outline: 3px solid #e2a84d; outline-offset: 2px; border-radius: 4px; }
+.workspace-shell a:focus-visible, .workspace-shell button:focus-visible, .workspace-shell summary:focus-visible, .workspace-shell input:focus-visible { outline: 3px solid #e2a84d; outline-offset: 2px; border-radius: 4px; }
 @media (max-width: 900px) {
   .workspace-shell { height: auto; min-height: calc(100dvh - 5px); overflow: visible; }
   .workspace-main { grid-template-columns: 1fr; grid-template-rows: minmax(380px, 57dvh) minmax(360px, auto); flex: none; }

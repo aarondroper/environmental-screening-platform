@@ -25,6 +25,7 @@ from .ingestion import (
     ingest_ssurgo_regional_packages,
     retry_ingestion,
 )
+from .local_api import serve_local_api
 from .report import build_aoi_run_report, render_aoi_run_summary
 from .spatial import PostGISRepository, PostGISUnavailable, census_boundary_record
 from .ssurgo import parse_ssurgo_fixture
@@ -140,6 +141,19 @@ def _parser() -> argparse.ArgumentParser:
         default="json",
         help="Output format; JSON is machine-readable and summary is terminal-oriented",
     )
+
+    serve = sub.add_parser(
+        "serve",
+        help="Serve the local screening workspace and development-only NLCD bridge",
+    )
+    serve.add_argument(
+        "--frontend-dir",
+        type=Path,
+        default=Path("frontend/dist"),
+        help="Built frontend directory to serve",
+    )
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8080)
 
     fixtures_submit = sub.add_parser(
         "screen-fixtures",
@@ -424,6 +438,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             aoi_id=args.aoi_id,
             aoi_revision=args.aoi_revision,
         )
+    elif args.command == "serve":
+        serve_local_api(
+            args.data_dir,
+            frontend_dir=args.frontend_dir,
+            host=args.host,
+            port=args.port,
+        )
+        return 0
     elif args.command == "screen-fixtures":
         job = create_job(
             args.project_id,

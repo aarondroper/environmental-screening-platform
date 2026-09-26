@@ -6,6 +6,7 @@ const root = document.querySelector("#app");
 let recordedReport;
 let activeReport;
 let mountedMap;
+let screeningPoll;
 
 const currentView = () => {
   const searchParams = new URLSearchParams(window.location.search);
@@ -67,6 +68,73 @@ const wireAoiLoader = () => {
   });
 };
 
+const updateRunState = (status, phase, reason = null, jobId = null) => {
+  activeReport = {
+    ...activeReport,
+    screening_run: {
+      ...(activeReport.screening_run || {}),
+      status,
+      phase,
+      reason,
+      job_id: jobId || activeReport.screening_run?.job_id,
+    },
+  };
+  render();
+};
+
+const pollScreening = async (jobId) => {
+  try {
+    const response = await fetch(`/api/screening-jobs/${encodeURIComponent(jobId)}`);
+    if (!response.ok) throw new Error(`Status request failed (${response.status})`);
+    const status = await response.json();
+    if (status.report && ["succeeded", "failed"].includes(status.status)) {
+      activeReport = status.report;
+      render();
+      return;
+    }
+    updateRunState(status.status || "running", status.phase || "processing", null, jobId);
+    screeningPoll = window.setTimeout(() => pollScreening(jobId), 400);
+  } catch (error) {
+    updateRunState("failed", "status", error.message, jobId);
+  }
+};
+
+const wireScreeningAction = () => {
+  const run = root.querySelector("[data-run-screening]");
+  run?.addEventListener("click", async () => {
+    if (run.disabled) return;
+    run.disabled = true;
+    window.clearTimeout(screeningPoll);
+    try {
+      const context = await createAoiContext(activeReport.aoi.geometry);
+      activeReport = rebindReportToAoi(recordedReport, context);
+      updateRunState("queued", "queued");
+      const response = await fetch("/api/screening/nlcd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_name: activeReport.project?.name || "Environmental screening",
+          aoi: context.geometry,
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Screening request failed (${response.status})`);
+      }
+      const status = await response.json();
+      if (status.report && ["succeeded", "failed"].includes(status.status)) {
+        activeReport = status.report;
+        render();
+      } else {
+        updateRunState(status.status || "queued", status.phase || "queued", null, status.job_id);
+        screeningPoll = window.setTimeout(() => pollScreening(status.job_id), 250);
+      }
+    } catch (error) {
+      updateRunState("failed", "request", error.message);
+    }
+  });
+};
+
 const render = () => {
   mountedMap?.map.remove();
   mountedMap = undefined;
@@ -77,6 +145,7 @@ const render = () => {
   if (!operations) {
     mountPrimaryMap();
     wireAoiLoader();
+    wireScreeningAction();
   }
 };
 
