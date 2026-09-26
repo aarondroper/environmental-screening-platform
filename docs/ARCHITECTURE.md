@@ -16,7 +16,7 @@ The platform should be a coherent small application whose sophistication comes f
 
 ## Verified current boundary
 
-Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window and exact-snapshot raster summary, 3DEP ImageServer window and exact-snapshot elevation summary, bounded TNM Access 3DEP tile planning/acquisition, SSURGO SDA query, fixture-only PostGIS map-unit/component load, snapshot-pinned fixture-only SSURGO screening query, JSON project/AOI/job state, provenance/raw-byte storage, metrics, exports, and an optional PostGIS repository boundary. It stores operational data only under a caller-supplied external data directory. There is no deployed database, API, queue/worker service, frontend, or production/active regional environmental canonical data promotion. The architecture diagram remains the intended target, not an implementation diagram.
+Verified implementation is the local workflow in `src/environmental_screening_platform/`: Python CLI, official Census boundary acquisition/parser, NLCD WCS window and exact-snapshot raster summary, 3DEP ImageServer window and exact-snapshot elevation summary, bounded TNM Access 3DEP tile planning/acquisition, SSURGO SDA query, fixture-only PostGIS map-unit/component load, snapshot-pinned fixture-only SSURGO screening query, JSON project/AOI/job state, provenance/raw-byte storage, metrics, exports, an optional PostGIS repository boundary, and a dependency-free static frontend with a primary recorded screening report and secondary operations view. It stores operational data only under a caller-supplied external data directory. There is no deployed database, API, queue/worker service, or production/active regional environmental canonical data promotion. The architecture diagram remains the intended target, not an implementation diagram.
 
 ### Verified local execution boundary (Milestone 2B)
 
@@ -225,15 +225,16 @@ section; it never writes a report record, refreshes an active pointer, or
 collapses unknown, unavailable, incomplete, nodata, pending, quarantined, or
 rejected states into success or absence.
 
-The operations console is a separate static read model over this report
-contract. `frontend/src/main.mjs` loads a checked-in/generated
-`report-aoi-run` JSON document and `frontend/src/app.mjs` renders the AOI
-identity, deterministic plan, source lifecycle matrix, provenance, metrics,
-and guardrails without acquiring data or connecting to SQLite, PostGIS, or an
-API. The checked-in Washington, DC document is explicitly a recorded
-demonstration result. The console is intentionally not a generic dashboard,
-map, source adapter, worker, or screening implementation; future live wiring
-must preserve the report's independent unknown/incomplete/unavailable states.
+The static frontend is a read-only projection over this report contract.
+`frontend/src/main.mjs` loads the checked-in/generated `report-aoi-run` JSON
+document. Its primary route is a map-centric environmental screening report
+using the recorded AOI geometry and independent source metrics; `?view=operations`
+opens the secondary technical operations view with plans, attempts, candidates,
+promotions, and lifecycle detail. Neither route acquires data or connects to
+SQLite, PostGIS, or an API. The checked-in Washington, DC document is explicitly
+a recorded demonstration result. The frontend does not add screening behavior,
+source geometries, a composite score, or regulatory conclusions, and preserves
+the report's independent unknown/incomplete/unavailable states.
 
 When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 

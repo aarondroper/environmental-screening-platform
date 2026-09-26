@@ -1,4 +1,4 @@
-import { renderReport } from "./app.mjs";
+import { renderReport, renderScreeningReport } from "./app.mjs";
 
 const root = document.querySelector("#app");
 
@@ -8,8 +8,9 @@ fetch("demo/report.json")
     return response.json();
   })
   .then((report) => {
-    root.innerHTML = renderReport(report);
-    document.title = `${report.project?.name || "Environmental Screening"} | Operations Console`;
+    const operations = new URLSearchParams(window.location.search).get("view") === "operations";
+    root.innerHTML = operations ? renderReport(report) : renderScreeningReport(report);
+    document.title = `${report.project?.name || "Environmental Screening"} | ${operations ? "Operations" : "Screening Report"}`;
   })
   .catch((error) => {
     root.innerHTML = `<section class="panel error"><h1>Report unavailable</h1><p>${error.message}</p><p>Serve the built console over HTTP so the report fixture can be loaded.</p></section>`;

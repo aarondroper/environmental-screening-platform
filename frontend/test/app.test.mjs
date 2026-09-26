@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { sourceRows, renderReport, lifecycleState, candidateDispositionState, formatBytes } from "../src/app.mjs";
+import { sourceRows, renderReport, renderScreeningReport, lifecycleState, candidateDispositionState, formatBytes } from "../src/app.mjs";
 
 const report = JSON.parse(await readFile(new URL("../public/demo/report.json", import.meta.url), "utf8"));
 
@@ -81,4 +81,59 @@ test("handles missing optional report fields without inventing results", () => {
 test("formats artifact sizes without changing recorded values", () => {
   assert.equal(formatBytes(863154), "842.9 KB");
   assert.equal(formatBytes(null), "—");
+});
+
+test("renders the environmental screening report as the primary map-centric experience", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /Environmental screening report/);
+  assert.match(html, /data-screening-source="annual_nlcd"/);
+  assert.match(html, /data-screening-source="3dep"/);
+  assert.match(html, /data-screening-source="ssurgo"/);
+  assert.match(html, /data-screening-source="fema_nfhl"/);
+  assert.match(html, /data-screening-source="padus"/);
+  assert.match(html, /class="aoi-map"/);
+  assert.match(html, /Recorded AOI geometry/);
+  assert.match(html, /Technical operations view/);
+  assert.match(html, /No composite environmental score/);
+});
+
+test("shows recorded NLCD and 3DEP metrics without inventing a cross-source result", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /AOI coverage.*100% covered/);
+  assert.match(html, /Valid pixels.*62/);
+  assert.match(html, /Observed classes.*developed_high_intensity: 57/);
+  assert.match(html, /Valid cells.*484/);
+  assert.match(html, /Elevation.*18\.52–22\.55 meters/);
+  assert.match(html, /Mean.*20\.71 meters/);
+  assert.doesNotMatch(html, /overall suitability/);
+});
+
+test("renders unavailable, incomplete, rejected, conditional, unknown, and nodata semantics", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /Blocked/);
+  assert.match(html, /Unavailable — provider access blocked/);
+  assert.match(html, /Incomplete \/ partial/);
+  assert.match(html, /Rejected for incomplete coverage/);
+  assert.match(html, /Conditional/);
+  assert.match(html, /Coverage.*Unknown/);
+  assert.match(html, /Nodata pixels.*0/);
+  assert.match(html, /Nodata cells.*0/);
+});
+
+test("provides provenance disclosures and only claims available export artifacts", () => {
+  const html = renderScreeningReport(report);
+  assert.match(html, /Source provenance and details/);
+  assert.match(html, /annual_nlcd:a8bcc633fd343366a5a135a3390eb02b8ecb21ce14ecd1f263a1886f9a344284/);
+  assert.match(html, /recorded-nlcd-snapshot/);
+  assert.match(html, /Download JSON report/);
+  assert.match(html, /CSV not included in fixture/);
+  assert.match(html, /GeoJSON not included in fixture/);
+});
+
+test("keeps responsive layout hooks for desktop and mobile screening views", async () => {
+  const css = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.screening-hero\s*\{\s*display: grid/);
+  assert.match(css, /@media \(max-width: 800px\)/);
+  assert.match(css, /@media \(max-width: 560px\)/);
+  assert.match(css, /\.screening-grid\s*\{\s*grid-template-columns: 1fr/);
 });

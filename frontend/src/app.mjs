@@ -14,6 +14,9 @@ const STAGE_LABELS = {
 };
 
 const STATUS_LABELS = {
+  observed: "Observed",
+  partial: "Partial",
+  conditional: "Conditional",
   screened: "Screened",
   promoted: "Promoted",
   validated: "Validated",
@@ -29,6 +32,9 @@ const STATUS_LABELS = {
 };
 
 const STATUS_HELP = {
+  observed: "A source-specific screening observation was recorded.",
+  partial: "The recorded screening includes different source completion states.",
+  conditional: "The source remains conditional and is not fully validated for this report.",
   screened: "A source-specific screening result was recorded.",
   promoted: "An AOI-scoped source version is active.",
   validated: "A candidate passed source validation but is not active.",
@@ -190,6 +196,146 @@ const sourceDetail = (row) => {
   </article>`;
 };
 
+const screeningStatus = (row) => {
+  if (row.id === "padus") return `${statusBadge("conditional")} ${statusBadge("unknown")}`;
+  if (row.id === "fema_nfhl") return `${statusBadge("blocked")} ${statusBadge("unavailable")}`;
+  if (row.result?.observation_status === "data_observed") return statusBadge("observed");
+  return statusBadge(row.state);
+};
+
+const screeningMetric = (label, value) => `<div class="screening-metric"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+
+const screeningMetrics = (row) => {
+  const metrics = row.result?.metrics || {};
+  const coverage = metrics.coverage || {};
+  if (row.id === "annual_nlcd" && row.result) {
+    const classes = Object.values(metrics.classes || {}).map((item) => `${item.class_name || "class"}: ${formatNumber(item.pixel_count, 0)}`).join(" · ");
+    return [
+      screeningMetric("AOI coverage", `${formatNumber(coverage.covered_aoi_percentage)}% covered`),
+      screeningMetric("Valid pixels", formatNumber(metrics.valid_pixel_count, 0)),
+      screeningMetric("Nodata pixels", formatNumber(metrics.nodata_pixel_count, 0)),
+      screeningMetric("Observed classes", classes || "—"),
+    ];
+  }
+  if (row.id === "3dep" && row.result) {
+    const raster = metrics.raster || {};
+    return [
+      screeningMetric("AOI coverage", `${formatNumber(coverage.covered_aoi_percentage)}% covered`),
+      screeningMetric("Valid cells", formatNumber(metrics.valid_cell_count, 0)),
+      screeningMetric("Nodata cells", formatNumber(metrics.nodata_cell_count, 0)),
+      screeningMetric("Elevation", `${formatNumber(metrics.minimum_elevation)}–${formatNumber(metrics.maximum_elevation)} ${metrics.elevation_units || "units"}`),
+      screeningMetric("Mean", `${formatNumber(metrics.mean_elevation)} ${metrics.elevation_units || "units"}`),
+      screeningMetric("Grid", `${raster.source_crs || raster.crs || "—"} · ${raster.nodata ?? "—"} nodata`),
+    ];
+  }
+  if (row.id === "ssurgo") {
+    return [
+      screeningMetric("Coverage", "Incomplete / partial"),
+      screeningMetric("Screening result", "Not recorded"),
+      screeningMetric("Candidate", "Rejected for incomplete coverage"),
+      screeningMetric("Interpretation", "Soil indicator only"),
+    ];
+  }
+  if (row.id === "fema_nfhl") {
+    return [
+      screeningMetric("Availability", "Unavailable — provider access blocked"),
+      screeningMetric("Effective / pending", "Sample validation incomplete"),
+      screeningMetric("Unmapped areas", "Unknown, not hazard-free"),
+    ];
+  }
+  return [
+    screeningMetric("Validation", "Conditional / quarantined"),
+    screeningMetric("Coverage", "Unknown"),
+    screeningMetric("Screening result", "Not recorded"),
+  ];
+};
+
+const screeningProvenance = (row) => {
+  const source = row.source;
+  const candidate = source.candidates?.at(-1) || {};
+  const version = source.active_aoi_versions?.at(-1) || source.source_versions?.at(-1) || {};
+  const result = row.result || {};
+  const provenance = result.provenance || {};
+  const versionId = version.version_id || result.source_version_id;
+  const snapshotId = provenance.source_snapshot_id || result.source_snapshot_id;
+  const checksum = candidate.sha256 || version.sha256 || provenance.sha256;
+  if (!versionId && !snapshotId && !checksum) return `<p class="muted">No source version or screening snapshot was recorded for this status-only source.</p>`;
+  return `<dl class="screening-provenance">
+    <div><dt>Source version</dt><dd><code>${escapeHtml(versionId)}</code></dd></div>
+    <div><dt>Screening snapshot</dt><dd><code>${escapeHtml(snapshotId)}</code></dd></div>
+    <div><dt>Checksum</dt><dd><code class="hash">${escapeHtml(checksum)}</code></dd></div>
+  </dl>`;
+};
+
+const screeningSourceCard = (row) => {
+  const source = row.source;
+  const limitation = row.id === "ssurgo"
+    ? "Hydric-soil information; not a wetlands inventory or regulatory determination."
+    : row.id === "fema_nfhl"
+      ? "FEMA was not screened; provider access is blocked and unavailable areas remain unknown."
+      : row.id === "padus"
+        ? "PAD-US remains conditional/quarantined; regional coverage is unknown and no screening was performed."
+        : "Independent source result; no cross-source score or suitability conclusion is calculated.";
+  return `<article class="screening-card" data-screening-source="${escapeHtml(row.id)}">
+    <div class="screening-card-head"><div><p class="eyebrow">${escapeHtml(row.id)}</p><h3>${escapeHtml(row.label)}</h3></div><div class="status-stack">${screeningStatus(row)}</div></div>
+    <p class="screening-observation">${escapeHtml(row.result ? (row.result.observation_status === "data_observed" ? "Observed in the recorded AOI result." : row.result.observation_status) : source.status_only_reason || "No source-specific screening result was recorded.")}</p>
+    <dl class="screening-metrics">${screeningMetrics(row).join("")}</dl>
+    <p class="screening-limitation">${escapeHtml(limitation)}</p>
+    <details><summary>Source provenance and details</summary>${screeningProvenance(row)}</details>
+  </article>`;
+};
+
+const mapRings = (geometry) => {
+  if (!geometry) return [];
+  if (geometry.type === "Polygon") return geometry.coordinates || [];
+  if (geometry.type === "MultiPolygon") return (geometry.coordinates || []).flatMap((polygon) => polygon);
+  return [];
+};
+
+const renderAoiMap = (aoi) => {
+  const rings = mapRings(aoi.geometry);
+  if (!rings.length) return `<div class="map-empty"><strong>AOI geometry unavailable</strong><p>The recorded report does not contain a renderable geometry.</p></div>`;
+  const points = rings.flatMap((ring) => ring);
+  const rawBounds = aoi.spatial_validation?.bounds;
+  const minX = rawBounds?.[0] ?? Math.min(...points.map(([x]) => x));
+  const minY = rawBounds?.[1] ?? Math.min(...points.map(([, y]) => y));
+  const maxX = rawBounds?.[2] ?? Math.max(...points.map(([x]) => x));
+  const maxY = rawBounds?.[3] ?? Math.max(...points.map(([, y]) => y));
+  const xSpan = Math.max(maxX - minX, 0.000001);
+  const ySpan = Math.max(maxY - minY, 0.000001);
+  const project = ([x, y]) => `${(((x - minX) / xSpan) * 86 + 7).toFixed(3)},${(100 - (((y - minY) / ySpan) * 78 + 11)).toFixed(3)}`;
+  const paths = rings.map((ring) => `<path d="M ${ring.map(project).join(" L ")} Z" />`).join("");
+  return `<svg class="aoi-map" viewBox="0 0 100 100" role="img" aria-label="Recorded Washington, DC area of interest boundary">
+    <defs><pattern id="map-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#d8e0dd" stroke-width=".25" /></pattern></defs>
+    <rect width="100" height="100" fill="url(#map-grid)" />
+    <path class="map-aoi" d="${paths.replaceAll('"', "&quot;")}" />
+    <text x="8" y="92" class="map-label">Recorded AOI boundary</text>
+  </svg>`;
+};
+
+export const renderScreeningReport = (report = {}) => {
+  const project = report.project || {};
+  const aoi = report.aoi || {};
+  const area = aoi.area || {};
+  const rows = sourceRows(report);
+  const parent = report.parent_ingestion_runs?.[0] || {};
+  const screenedRows = rows.filter((row) => row.result);
+  const timestamp = report.report_timestamp || parent.started_at || "Recorded fixture";
+  return `<div class="screening-app">
+    <header class="screening-header"><div><p class="eyebrow">Environmental Screening &amp; GeoData Operations Platform</p><h1>Environmental screening report</h1><p class="lede">A preliminary source-by-source review for one recorded area of interest.</p></div><nav aria-label="Application views"><span class="demo-badge">Recorded demonstration</span><a class="secondary-link" href="?view=operations">Technical operations view</a></nav></header>
+    <div class="screening-notice"><strong>Preliminary screening only.</strong> This recorded Washington, DC result is read-only. It does not provide a composite score, regulatory determination, safety conclusion, or suitability recommendation.</div>
+    <main>
+      <section class="screening-hero">
+        <div class="map-panel"><div class="section-heading"><div><p class="eyebrow">Study area</p><h2>Area of interest</h2></div><span class="map-crs">WGS84 · ${escapeHtml(aoi.policy || "generic")}</span></div>${renderAoiMap(aoi)}<div class="map-caption"><span>Recorded AOI geometry · source geometries not included</span><code>${escapeHtml(aoi.geometry_sha256)}</code></div></div>
+        <aside class="screening-summary"><p class="eyebrow">Report status</p><div class="report-status"><span class="badge badge-partial">Partial recorded result</span><span>${formatNumber(screenedRows.length, 0)} of ${formatNumber(rows.length, 0)} selected source pathways have screening results</span></div><dl class="summary-details"><div><dt>Project</dt><dd>${escapeHtml(project.name)}</dd><dd><code>${escapeHtml(project.project_id)}</code></dd></div><div><dt>AOI revision</dt><dd>${escapeHtml(aoi.aoi_id)} · revision ${escapeHtml(aoi.revision)}</dd></div><div><dt>Area</dt><dd>${formatNumber(area.value_sqkm, 5)} km² · ${escapeHtml(area.crs || "—")}</dd></div><div><dt>Recorded at</dt><dd>${escapeHtml(timestamp)}</dd></div></dl><div class="summary-warning"><strong>Interpretation guardrail</strong><p>Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.”</p></div></aside>
+      </section>
+      <section class="results-section"><div class="section-heading"><div><p class="eyebrow">Independent source results</p><h2>What the recorded sources show</h2></div><span class="muted">No composite environmental score</span></div><div class="screening-grid">${rows.map(screeningSourceCard).join("")}</div></section>
+      <section class="screening-footer-panel"><div><p class="eyebrow">Recorded report outputs</p><h2>Review and export</h2><p class="muted">Use the details disclosures on each source for exact version and checksum lineage. Provider access and live processing are not required for this demonstration.</p></div><div class="export-actions"><a class="button primary-button" href="demo/report.json" download>Download JSON report</a><span class="button disabled-button" aria-disabled="true">CSV not included in fixture</span><span class="button disabled-button" aria-disabled="true">GeoJSON not included in fixture</span></div></section>
+    </main>
+    <footer><span>Recorded screening projection · source metrics remain independent</span><a href="?view=operations">Open technical operations report</a></footer>
+  </div>`;
+};
+
 export const renderReport = (report = {}) => {
   const project = report.project || {};
   const aoi = report.aoi || {};
@@ -209,7 +355,7 @@ export const renderReport = (report = {}) => {
   }).join("");
   return `<div class="console-header">
     <div><p class="eyebrow">Environmental Screening &amp; GeoData Operations Platform</p><h1>Operations console</h1><p class="lede">A read-only projection of one deterministic AOI lifecycle.</p></div>
-    <span class="demo-badge">Recorded demonstration</span>
+    <nav aria-label="Application views"><span class="demo-badge">Recorded demonstration</span><a class="secondary-link" href="./">Screening report</a></nav>
   </div>
   <div class="notice"><strong>Recorded demonstration result.</strong> This console reads a checked-in <code>report-aoi-run</code> JSON fixture from the retained Washington, DC smoke scenario. It does not contact providers, run jobs, or imply regulatory, safety, or suitability conclusions.</div>
   <section class="panel identity"><div class="section-heading"><div><p class="eyebrow">Run identity</p><h2>Project and AOI</h2></div><span class="status-text">Parent run: ${escapeHtml(overall)}</span></div>

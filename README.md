@@ -156,7 +156,7 @@ terminal view. The report is read-only, works for generic AOIs, performs no
 provider access, and keeps unknown/unavailable/incomplete/nodata/quarantined
 states distinct from no constraint observed.
 
-For a static operations-console demonstration of that report, build and serve
+For the primary static environmental-screening demonstration, build and serve
 the dependency-free frontend:
 
 ```bash
@@ -166,11 +166,17 @@ npm run build
 python3 -m http.server 8080 --directory dist
 ```
 
-Open <http://localhost:8080/>. The console reads the checked-in
-`frontend/public/demo/report.json`, a recorded Washington, DC smoke result. It
-is a read-only projection of the `report-aoi-run` JSON shape: it performs no
-provider access, does not require the Python backend, PostGIS, or raw source
-downloads, and does not add screening behavior or conclusions.
+Open <http://localhost:8080/>. The primary route is a map-centric screening
+report that reads the checked-in `frontend/public/demo/report.json`, a
+recorded Washington, DC smoke result. It uses the recorded AOI geometry and
+source-specific metrics without provider access, the Python backend, PostGIS,
+raw source downloads, or new screening behavior. It does not present a
+composite score, safety/suitability conclusion, or regulatory determination.
+
+The report links to the secondary technical operations view at
+<http://localhost:8080/?view=operations>. That view projects the same report's
+plans, attempts, retries, candidates, promotions, and source lifecycle for
+provenance review; it is not the primary user workflow.
 
 The SSURGO command creates a single-source `ssurgo_fixture_only` job. It reports exact snapshot/version provenance, fixture-only status, covered/uncovered AOI area, map-unit/component metrics, and hydric-soil attributes. It never selects latest data or claims regional SSURGO coverage. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. Active regional canonical environmental layers and regional tiling are not implemented.
 

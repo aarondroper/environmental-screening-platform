@@ -19,6 +19,10 @@
       "area_sqkm": 0.03852,
       "bounds": [-77.041, 38.9, -77.039, 38.902],
       "validation_policy": "generic"
+    },
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [[[-77.041, 38.9], [-77.039, 38.9], [-77.039, 38.902], [-77.041, 38.902], [-77.041, 38.9]]]
     }
   },
   "selected_sources": ["annual_nlcd", "3dep", "ssurgo", "padus", "fema_nfhl"],

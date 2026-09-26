@@ -14,16 +14,18 @@ Verified on 2026-09-25 after runtime verification of the Milestone 2B.4 AOI boun
 ## Read-only operations console
 
 Verified on 2026-09-26. `frontend/` contains a dependency-free static
-operations console that consumes the existing `report-aoi-run` JSON shape. A
-checked-in `frontend/public/demo/report.json` records the retained Washington,
-DC smoke scenario: active NLCD and 3DEP screening evidence plus an incomplete,
-inactive SSURGO package path with retry history. The console exposes project/AOI
-identity, geometry hash, plans, attempts, checksums, validation, promotion,
-active versions, immutable snapshots, source metrics, and explicit warning /
-unknown / incomplete states. `npm test` and `npm run build` are the local
-frontend checks; serving `frontend/dist` is a static preview only. No backend,
-provider access, PostGIS connection, raw artifact, authentication, worker,
-live map, or new screening behavior was added.
+environmental screening report as the primary route and the existing technical
+operations console at `?view=operations`, both consuming the `report-aoi-run`
+JSON shape. A checked-in `frontend/public/demo/report.json` records the retained
+Washington, DC smoke scenario with its exact AOI polygon: active NLCD and 3DEP
+screening evidence, an incomplete/rejected SSURGO package path, and status-only
+PAD-US/FEMA outcomes. The primary report exposes the AOI map, source-specific
+metrics, provenance disclosures, limitations, and JSON export; the secondary
+view exposes plans, attempts, checksums, validation, promotion, active versions,
+immutable snapshots, and lifecycle detail. `npm test` and `npm run build` are
+the local frontend checks; serving `frontend/dist` is a static preview only. No
+backend, provider access, PostGIS connection, raw artifact, authentication,
+worker, or new screening behavior was added.
 
 ## Implemented Milestone 2B slice
 
