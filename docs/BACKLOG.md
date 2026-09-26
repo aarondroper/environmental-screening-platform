@@ -491,6 +491,18 @@ limited to Screening, Reports, and Data sources. The operations console remains
 a separate technical route. No source semantics, screening behavior, or
 browser-ready environmental overlays changed.
 
+## Focused defect fix — AOI-specific NLCD browser preview delivery
+
+**Status:** Completed 2026-09-26
+
+The generic NLCD screening bridge now returns its generated, lineage-validated
+display derivative under the source-keyed `browser_previews.annual_nlcd`
+contract expected by the Leaflet workspace. A legacy unkeyed preview is
+normalized on read for already-completed jobs. The real local Colorado smoke
+confirmed external persistence, metadata and asset HTTP delivery, exact AOI and
+source checksum lineage, and the existing client-side raster/identify checks.
+No source selection, screening metric, or frontend design behavior changed.
+
 ## Milestone 7 — Backend API and operational endpoints
 
 **Priority:** P1

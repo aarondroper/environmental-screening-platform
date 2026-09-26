@@ -240,6 +240,20 @@ def _generate_nlcd_browser_preview(
     }
 
 
+def _normalize_browser_previews(browser_previews: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the source-keyed preview shape expected by the presentation layer.
+
+    Jobs written by the first AOI-preview implementation stored the single
+    Annual NLCD preview object directly. Normalize that legacy shape when it
+    is read so an already-completed job cannot regress to metrics-only display.
+    """
+    if not browser_previews:
+        return {}
+    if browser_previews.get("source_id") == "annual_nlcd" and "status" in browser_previews:
+        return {"annual_nlcd": browser_previews}
+    return browser_previews
+
+
 def _presentation_report(
     data_root: Path,
     job: dict[str, Any],
@@ -309,7 +323,7 @@ def _presentation_report(
         "aoi": aoi,
         "selected_sources": list(BRIDGE_SOURCES),
         "sources": sources,
-        "browser_previews": browser_previews or {},
+        "browser_previews": _normalize_browser_previews(browser_previews),
         "aoi_context": {
             "origin": "user_provided",
             "screened": bool(source_result and bridge_status == "succeeded"),
@@ -431,11 +445,16 @@ class LocalScreeningBridge:
             )
             if source_result["attempt_status"] != "validated":
                 raise ValueError(source_result.get("reason") or "NLCD screening failed")
-            browser_previews = _generate_nlcd_browser_preview(
+            nlcd_preview = _generate_nlcd_browser_preview(
                 self.data_root,
                 read_json(_job_path(self.data_root, job_id)),
                 result,
             )
+            # Presentation reports expose previews keyed by source identifier.
+            # Keep the single-source generator focused on creating one preview,
+            # then normalize its result at the bridge boundary so the frontend
+            # can discover the job-scoped Annual NLCD asset reliably.
+            browser_previews = {"annual_nlcd": nlcd_preview} if nlcd_preview else {}
             report = _presentation_report(
                 self.data_root,
                 read_json(_job_path(self.data_root, job_id)),

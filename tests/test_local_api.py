@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import multiprocessing
+import socket
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import numpy as np
 import pytest
@@ -18,7 +23,9 @@ from environmental_screening_platform.local_api import (
     LocalScreeningBridge,
     _generate_nlcd_browser_preview,
     _lineage_issue,
+    _normalize_browser_previews,
     _set_phase,
+    serve_local_api,
 )
 from environmental_screening_platform.store import read_json, write_json
 from environmental_screening_platform.workflow import (
@@ -266,6 +273,152 @@ def test_successful_local_run_returns_exact_aoi_and_source_lineage(tmp_path: Pat
         assert source_result["ingestion_run_id"] == "run-nlcd"
         assert source_result["provenance"]["sha256"] == "checksum-nlcd"
         assert "-77.04" not in json.dumps(created["report"], sort_keys=True)
+
+
+def test_successful_bridge_keys_nlcd_preview_by_source_for_frontend(tmp_path: Path) -> None:
+    def fake_run(job_id: str, data_root: Path, **_: Any) -> dict[str, Any]:
+        from environmental_screening_platform.store import read_json
+
+        job = read_json(data_root / "workspace" / "jobs" / job_id / "job.json")
+        revision = read_json(
+            data_root
+            / "workspace"
+            / "projects"
+            / job["project_id"]
+            / "aoi-revisions"
+            / f"{job['aoi_id']}.json"
+        )
+        result = _result(revision["geometry_sha256"])
+        result.update({"project_id": job["project_id"], "aoi_id": job["aoi_id"]})
+        _complete_fake_job(data_root, job_id)
+        return result
+
+    bridge = LocalScreeningBridge(tmp_path, executor=ImmediateExecutor())
+    preview = {
+        "status": "available",
+        "source_id": "annual_nlcd",
+        "asset_url": "/api/screening-jobs/job/nlcd-preview/asset",
+        "metadata_url": "/api/screening-jobs/job/nlcd-preview/metadata",
+    }
+    with (
+        patch(
+            "environmental_screening_platform.local_api.ingest_nlcd_aoi",
+            return_value={"candidate": _candidate()},
+        ),
+        patch(
+            "environmental_screening_platform.local_api.SQLiteSourceRepository.promote",
+            return_value={"decision": "promoted"},
+        ),
+        patch("environmental_screening_platform.local_api.bind_job_snapshots"),
+        patch(
+            "environmental_screening_platform.local_api.SQLiteSourceRepository.get_job_snapshots",
+            return_value=[
+                {
+                    "source_id": "annual_nlcd",
+                    "snapshot_id": "snapshot-nlcd",
+                    "version_id": "version-nlcd",
+                    "candidate_id": "candidate-nlcd",
+                    "ingestion_run_id": "run-nlcd",
+                    "provenance": {"sha256": "checksum-nlcd"},
+                }
+            ],
+        ),
+        patch("environmental_screening_platform.local_api.run_job", side_effect=fake_run),
+        patch(
+            "environmental_screening_platform.local_api._generate_nlcd_browser_preview",
+            return_value=preview,
+        ),
+    ):
+        created = bridge.submit(project_name="Preview shape test", geojson=_colorado_aoi())
+
+    assert created["status"] == "succeeded"
+    assert created["report"]["browser_previews"] == {"annual_nlcd": preview}
+    assert created["report"]["browser_previews"]["annual_nlcd"]["metadata_url"].endswith(
+        "/metadata"
+    )
+
+
+def test_legacy_unkeyed_preview_is_normalized_for_existing_jobs() -> None:
+    preview = {"status": "available", "source_id": "annual_nlcd", "asset_url": "/asset"}
+    assert _normalize_browser_previews(preview) == {"annual_nlcd": preview}
+    assert _normalize_browser_previews({"annual_nlcd": preview}) == {"annual_nlcd": preview}
+    assert _normalize_browser_previews({}) == {}
+
+
+def test_http_preview_routes_serve_job_scoped_metadata_and_asset(tmp_path: Path) -> None:
+    created = create_project_from_geojson("HTTP preview test", _aoi(), tmp_path)
+    revision = created["aoi_revision"]
+    job = create_job(
+        created["project"]["project_id"],
+        tmp_path,
+        revision["aoi_id"],
+        source_ids=("annual_nlcd",),
+        screening_mode="active_aoi",
+        defer_source_snapshot=True,
+    )
+    source = tmp_path / "source.tif"
+    checksum = _write_nlcd_artifact(source, revision["geometry"])
+    preview = _generate_nlcd_browser_preview(
+        tmp_path,
+        job,
+        {
+            "source_results": [
+                {
+                    "source_id": "annual_nlcd",
+                    "source_snapshot_id": "snapshot-http",
+                    "source_version_id": "version-http",
+                    "candidate_id": "candidate-http",
+                    "ingestion_run_id": "run-http",
+                    "metrics": {"source_year": 2025},
+                    "provenance": {"artifact_path": str(source), "sha256": checksum},
+                }
+            ]
+        },
+    )
+    preview_dir = tmp_path / "workspace" / "jobs" / job["job_id"] / "browser-previews"
+    metadata_path = preview_dir / "annual-nlcd-preview.json"
+    asset_path = preview_dir / "annual-nlcd-preview.png"
+    assert preview["asset_url"].endswith("/nlcd-preview/asset")
+    assert metadata_path.is_file()
+    assert asset_path.is_file()
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    process = multiprocessing.Process(
+        target=serve_local_api,
+        args=(tmp_path,),
+        kwargs={"frontend_dir": tmp_path, "host": "127.0.0.1", "port": port},
+    )
+    process.start()
+    base_url = f"http://127.0.0.1:{port}/api/screening-jobs/{job['job_id']}/nlcd-preview"
+
+    def fetch(path: str) -> bytes:
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                with urlopen(f"{base_url}/{path}", timeout=1) as response:
+                    assert response.status == 200
+                    return response.read()
+            except (URLError, TimeoutError):
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
+
+    try:
+        response_metadata = json.loads(fetch("metadata"))
+        response_asset = fetch("asset")
+    finally:
+        process.terminate()
+        process.join(timeout=5)
+
+    assert response_metadata["status"] == "available"
+    assert response_metadata["source"]["source_snapshot_id"] == "snapshot-http"
+    assert response_metadata["source"]["source_version_id"] == "version-http"
+    assert response_metadata["source"]["sha256"] == checksum
+    assert response_metadata["aoi"]["revision"] == revision["revision"]
+    assert response_metadata["aoi"]["geometry_sha256"] == revision["geometry_sha256"]
+    assert response_asset == asset_path.read_bytes()
 
 
 def test_failed_acquisition_can_retry_without_replacing_the_aoi(tmp_path: Path) -> None:

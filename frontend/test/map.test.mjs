@@ -65,6 +65,15 @@ test("wires the loaded AOI to the local NLCD screening bridge", async () => {
   assert.match(main, /rebindReportToAoi\(recordedReport, context\)/);
 });
 
+test("discovers the job-scoped Annual NLCD preview by source key", async () => {
+  assert.equal(report.browser_previews.annual_nlcd.status, "available");
+  assert.match(report.browser_previews.annual_nlcd.metadata_url, /demo\/nlcd-preview\.json/);
+  const main = await readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  const app = await readFile(new URL("../src/app.mjs", import.meta.url), "utf8");
+  assert.match(main, /activeReport\.browser_previews \|\| \{\}/);
+  assert.match(app, /previews\.annual_nlcd/);
+});
+
 test("identifies an NLCD class by human-readable name and preserves unknown states", () => {
   const metadata = {
     raster: { width: 2, height: 2 },

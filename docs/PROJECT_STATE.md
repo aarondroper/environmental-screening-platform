@@ -48,6 +48,22 @@ the loaded AOI and runs Annual NLCD only. Invalid, empty, non-area, malformed,
 or self-intersecting input is rejected in the secondary loader panel; the DC
 demonstration remains the default and reset state.
 
+### Generic NLCD preview delivery recovery
+
+Verified on 2026-09-26 with a real small Colorado AOI through `screening serve`.
+The local bridge generated the AOI-specific RGBA preview and persisted its
+metadata and asset under the external job workspace; both job-scoped HTTP
+routes returned the expected metadata/PNG and preserved the exact AOI revision,
+geometry hash, source snapshot, source version, source checksum, EPSG:5070
+transform, dimensions, and nodata value. The defect was a response-shape
+mismatch: the bridge placed one Annual NLCD preview object directly in
+`browser_previews`, while the frontend consumes the source-keyed shape
+`browser_previews.annual_nlcd`. The bridge now writes that shape and
+normalizes the legacy unkeyed shape when reading an already-completed job, so
+older successful jobs do not regress to metrics-only mode. HTTP-level
+regression coverage verifies metadata and asset delivery, and the existing
+client lineage checks remain in force.
+
 The checked-in NLCD display derivative is `frontend/public/demo/nlcd-preview.png`
 (3,486 bytes, SHA-256
 `1c4923005aeb4781f8c15ba3d0e7a1d8ecf53e57e1d045751fa864f1605721d2`), with
