@@ -6,11 +6,23 @@
     "aoi_nodata_pixel_count": 0,
     "aoi_revision": 1,
     "aoi_valid_pixel_count": 62,
+    "display_crs": "EPSG:4326",
+    "display_height": 990,
+    "display_transform": [
+      0.0002948754401233853,
+      0.0,
+      -77.22986480756242,
+      0.0,
+      -0.0002948754401233853,
+      39.046897137350946
+    ],
+    "display_valid_pixel_count": 62,
+    "display_width": 1292,
     "outside_aoi_pixels_transparent": true,
     "overlay_bounds_wgs84": [
       -77.22986480756242,
-      38.7549439265116,
-      -76.84900126100888,
+      38.75497045162879,
+      -76.848885738923,
       39.046897137350946
     ],
     "source_crs": "EPSG:5070",
@@ -28,15 +40,44 @@
     "revision": 1
   },
   "display": {
-    "asset_byte_size": 3486,
+    "asset_byte_size": 5132,
     "asset_path": "nlcd-preview.png",
-    "asset_sha256": "1c4923005aeb4781f8c15ba3d0e7a1d8ecf53e57e1d045751fa864f1605721d2",
+    "asset_sha256": "6eec92572064b083431486b164c7670dfb569702e492da4a2ec0ebbc465b3785",
     "format": "RGBA PNG",
     "metadata_path": "nlcd-preview.json",
     "opacity_default": 0.58,
-    "transformation": "Source categorical pixels were masked to the recorded AOI and mapped to documented NLCD colors. No reprojection or resampling was performed. Outside-AOI and nodata pixels have alpha 0."
+    "transformation": "Source categorical pixels were masked to the recorded AOI, reprojected with nearest-neighbor resampling to a north-up EPSG:4326 display grid, and mapped to documented NLCD colors. Outside-AOI and nodata pixels have alpha 0."
   },
   "display_derivative": true,
+  "display_raster": {
+    "bounds": [
+      -77.22986480756242,
+      38.75497045162879,
+      -76.848885738923,
+      39.046897137350946
+    ],
+    "crs": "EPSG:4326",
+    "dtype": "uint8",
+    "height": 990,
+    "nodata": 250,
+    "pixel_dimensions": [
+      1292,
+      990
+    ],
+    "resolution": [
+      0.0002948754401233853,
+      0.0002948754401233853
+    ],
+    "transform": [
+      0.0002948754401233853,
+      0.0,
+      -77.22986480756242,
+      0.0,
+      -0.0002948754401233853,
+      39.046897137350946
+    ],
+    "width": 1292
+  },
   "generated_at": "2026-09-26",
   "legend": [
     {
@@ -62,30 +103,34 @@
   ],
   "raster": {
     "bounds": [
-      1604373.6132021893,
-      1911895.978800393,
-      1632143.9210880182,
-      1939666.2529330617
+      -77.22986480756242,
+      38.75497045162879,
+      -76.848885738923,
+      39.046897137350946
     ],
-    "crs": "EPSG:5070",
+    "crs": "EPSG:4326",
     "dtype": "uint8",
-    "height": 926,
+    "height": 990,
     "nodata": 250,
+    "pixel_dimensions": [
+      1292,
+      990
+    ],
     "resolution": [
-      29.989533354026946,
-      29.989496903529847
+      0.0002948754401233853,
+      0.0002948754401233853
     ],
     "transform": [
-      29.989533354026946,
+      0.0002948754401233853,
       0.0,
-      1604373.6132021893,
+      -77.22986480756242,
       0.0,
-      -29.989496903529847,
-      1939666.2529330617
+      -0.0002948754401233853,
+      39.046897137350946
     ],
-    "width": 926
+    "width": 1292
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "source": {
     "byte_size": 863154,
     "candidate_id": "1072d120-13c9-430e-854c-baa3bd731543",
@@ -124,6 +169,31 @@
     "terms_url": "https://doi.org/10.5066/P143HE8T"
   },
   "source_id": "annual_nlcd",
+  "source_raster": {
+    "bounds": [
+      1604373.6132021893,
+      1911895.978800393,
+      1632143.9210880182,
+      1939666.2529330617
+    ],
+    "crs": "EPSG:5070",
+    "dtype": "uint8",
+    "height": 926,
+    "nodata": 250,
+    "resolution": [
+      29.989533354026946,
+      29.989496903529847
+    ],
+    "transform": [
+      29.989533354026946,
+      0.0,
+      1604373.6132021893,
+      0.0,
+      -29.989496903529847,
+      1939666.2529330617
+    ],
+    "width": 926
+  },
   "source_year": 2025,
   "status": "available"
 }

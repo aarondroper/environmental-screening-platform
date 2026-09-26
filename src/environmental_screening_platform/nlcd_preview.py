@@ -13,15 +13,18 @@ from typing import Any
 import numpy as np
 import rasterio
 from pyproj import Transformer
+from rasterio.enums import Resampling
 from rasterio.features import geometry_mask
-from shapely.geometry import box, mapping, shape
+from rasterio.warp import calculate_default_transform, reproject
+from shapely.geometry import mapping, shape
 from shapely.ops import transform
 
 from .adapters import NLCD_CLASSES
 
-NLCD_PREVIEW_SCHEMA = 1
+NLCD_PREVIEW_SCHEMA = 2
 NLCD_NODATA = 250
 NLCD_SOURCE_CRS = "EPSG:5070"
+NLCD_DISPLAY_CRS = "EPSG:4326"
 
 # These are the documented NLCD categorical colors. The preview only emits
 # entries observed inside the recorded AOI, but keeping the full local domain
@@ -115,9 +118,11 @@ def generate_nlcd_preview(
 
     The source raster remains authoritative. This function only converts the
     source categorical values to display colors, with pixels outside the AOI
-    and source nodata written as alpha zero. No reprojection or resampling is
-    performed; Leaflet receives the source footprint transformed to WGS84 as
-    overlay bounds.
+    and source nodata written as alpha zero. The native source grid remains
+    authoritative and is recorded separately. The browser derivative is
+    reprojected with nearest-neighbor categorical resampling to a north-up,
+    axis-aligned WGS84 grid before it is written, so Leaflet's image bounds and
+    pixel rows/columns use the same coordinate system.
     """
     if not source_raster.is_file():
         raise FileNotFoundError(source_raster)
@@ -159,20 +164,10 @@ def generate_nlcd_preview(
         if unknown_values:
             raise ValueError(f"NLCD preview found unsupported class values: {unknown_values}")
 
-        rgba = np.zeros((4, dataset.height, dataset.width), dtype="uint8")
-        for value in observed_values:
-            code = int(value)
-            mask = inside & ~nodata & (values == code)
-            rgba[0, mask], rgba[1, mask], rgba[2, mask] = NLCD_DISPLAY_PALETTE[code]
-            rgba[3, mask] = 255
-        _atomic_png(preview_png, rgba, dataset.transform)
-
-        to_wgs84 = Transformer.from_crs(dataset.crs, "EPSG:4326", always_xy=True).transform
-        bounds_wgs84 = transform(to_wgs84, box(*dataset.bounds)).bounds
         source_bounds = _numbers(dataset.bounds)
         source_transform = _numbers(tuple(dataset.transform)[:6])
         source_resolution = [abs(float(dataset.transform.a)), abs(float(dataset.transform.e))]
-        raster_metadata = {
+        native_raster_metadata = {
             "crs": dataset.crs.to_string(),
             "bounds": source_bounds,
             "transform": source_transform,
@@ -182,17 +177,94 @@ def generate_nlcd_preview(
             "nodata": int(dataset.nodata),
             "resolution": source_resolution,
         }
+
+        display_transform, display_width, display_height = calculate_default_transform(
+            dataset.crs,
+            NLCD_DISPLAY_CRS,
+            dataset.width,
+            dataset.height,
+            *dataset.bounds,
+        )
+        if display_transform.b != 0 or display_transform.d != 0:
+            raise ValueError("NLCD display transform must be north-up and axis-aligned")
+        display_values = np.full((display_height, display_width), NLCD_NODATA, dtype="uint8")
+        source_values_for_display = np.where(inside, values, NLCD_NODATA).astype("uint8")
+        reproject(
+            source=source_values_for_display,
+            destination=display_values,
+            src_transform=dataset.transform,
+            src_crs=dataset.crs,
+            src_nodata=NLCD_NODATA,
+            dst_transform=display_transform,
+            dst_crs=NLCD_DISPLAY_CRS,
+            dst_nodata=NLCD_NODATA,
+            resampling=Resampling.nearest,
+        )
+
+        aoi_display = transform(
+            Transformer.from_crs("EPSG:4326", NLCD_DISPLAY_CRS, always_xy=True).transform,
+            aoi,
+        )
+        display_inside = geometry_mask(
+            [mapping(aoi_display)],
+            out_shape=display_values.shape,
+            transform=display_transform,
+            invert=True,
+            all_touched=True,
+        )
+        display_values[~display_inside] = NLCD_NODATA
+        display_observed_values = np.unique(display_values[display_values != NLCD_NODATA])
+        display_unknown_values = [
+            int(value) for value in display_observed_values if int(value) not in NLCD_CLASSES
+        ]
+        if display_unknown_values:
+            raise ValueError(
+                f"NLCD display found unsupported class values: {display_unknown_values}"
+            )
+
+        rgba = np.zeros((4, display_height, display_width), dtype="uint8")
+        for value in display_observed_values:
+            code = int(value)
+            mask = display_values == code
+            rgba[0, mask], rgba[1, mask], rgba[2, mask] = NLCD_DISPLAY_PALETTE[code]
+            rgba[3, mask] = 255
+        _atomic_png(preview_png, rgba, display_transform)
+
+        display_bounds = _numbers(
+            (
+                display_transform.c,
+                display_transform.f + display_transform.e * display_height,
+                display_transform.c + display_transform.a * display_width,
+                display_transform.f,
+            )
+        )
+        display_raster_metadata = {
+            "crs": NLCD_DISPLAY_CRS,
+            "bounds": display_bounds,
+            "transform": _numbers(tuple(display_transform)[:6]),
+            "width": display_width,
+            "height": display_height,
+            "pixel_dimensions": [display_width, display_height],
+            "dtype": "uint8",
+            "nodata": NLCD_NODATA,
+            "resolution": [abs(float(display_transform.a)), abs(float(display_transform.e))],
+        }
         alignment = {
             "aoi_crs": "EPSG:4326",
             "source_crs": dataset.crs.to_string(),
+            "display_crs": NLCD_DISPLAY_CRS,
             "aoi_geometry_sha256": aoi_geometry_sha256,
             "aoi_revision": aoi_revision,
             "aoi_intersecting_pixel_count": int(inside.sum()),
             "aoi_valid_pixel_count": int((inside & ~nodata).sum()),
             "aoi_nodata_pixel_count": int((inside & nodata).sum()),
+            "display_valid_pixel_count": int((display_values != NLCD_NODATA).sum()),
+            "display_width": display_width,
+            "display_height": display_height,
+            "display_transform": _numbers(tuple(display_transform)[:6]),
             "outside_aoi_pixels_transparent": True,
             "source_nodata_transparent": True,
-            "overlay_bounds_wgs84": _numbers(bounds_wgs84),
+            "overlay_bounds_wgs84": display_bounds,
         }
 
     source = dict(source_metadata)
@@ -200,7 +272,7 @@ def generate_nlcd_preview(
         {
             "sha256": observed_source_sha256,
             "byte_size": source_raster.stat().st_size,
-            "raster": raster_metadata,
+            "raster": native_raster_metadata,
         }
     )
     preview = {
@@ -216,29 +288,34 @@ def generate_nlcd_preview(
             "geometry_type": aoi.geom_type,
             "bounds_wgs84": _numbers(aoi.bounds),
         },
-        "raster": raster_metadata,
+        "source_raster": native_raster_metadata,
+        "display_raster": display_raster_metadata,
+        # Keep the existing frontend metadata key during the display contract
+        # transition; it now intentionally describes the browser grid.
+        "raster": display_raster_metadata,
         "alignment": alignment,
         "display": {
             "asset_path": preview_png.name,
             "metadata_path": metadata_json.name,
             "format": "RGBA PNG",
             "transformation": (
-                "Source categorical pixels were masked to the recorded AOI and mapped "
-                "to documented NLCD colors. No reprojection or resampling was performed. "
-                "Outside-AOI and nodata pixels have alpha 0."
+                "Source categorical pixels were masked to the recorded AOI, reprojected "
+                "with nearest-neighbor resampling to a north-up EPSG:4326 display grid, "
+                "and mapped to documented NLCD colors. Outside-AOI and nodata pixels "
+                "have alpha 0."
             ),
             "opacity_default": 0.58,
             "asset_sha256": _sha256(preview_png),
             "asset_byte_size": preview_png.stat().st_size,
         },
-        "observed_class_values": [int(value) for value in observed_values],
+        "observed_class_values": [int(value) for value in display_observed_values],
         "legend": [
             {
                 "value": int(value),
                 "label": NLCD_CLASSES[int(value)],
                 "color": "#{:02x}{:02x}{:02x}".format(*NLCD_DISPLAY_PALETTE[int(value)]),
             }
-            for value in observed_values
+            for value in display_observed_values
         ],
     }
     if generated_at is not None:

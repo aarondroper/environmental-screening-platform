@@ -39,10 +39,11 @@ export const identifyNlcdPixel = ({ latitude, longitude }, metadata, imageData, 
     return { status: "outside_coverage", message: "No NLCD observation: this location is outside NLCD coverage." };
   }
   if (aoi && !pointInAoi([longitude, latitude], aoi)) {
-    return { status: "outside_aoi", message: "No NLCD observation: this location is outside the loaded AOI." };
+    return { status: "outside_aoi", message: "Outside the loaded AOI." };
   }
-  const width = Number(imageData?.width || metadata.raster?.width);
-  const height = Number(imageData?.height || metadata.raster?.height);
+  const displayRaster = metadata.display_raster || metadata.raster;
+  const width = Number(imageData?.width || displayRaster?.width);
+  const height = Number(imageData?.height || displayRaster?.height);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return { status: "unknown", message: "No NLCD observation: raster dimensions are unavailable." };
   }
@@ -51,7 +52,7 @@ export const identifyNlcdPixel = ({ latitude, longitude }, metadata, imageData, 
   const offset = (y * width + x) * 4;
   const alpha = Number(imageData?.data?.[offset + 3] || 0);
   if (!alpha) {
-    return { status: "nodata", message: "No NLCD observation: this pixel is nodata or outside the AOI mask." };
+    return { status: "nodata", message: "No NLCD observation at this location: the pixel is nodata." };
   }
   const rgb = [...imageData.data.slice(offset, offset + 3)];
   const legend = (metadata.legend || []).find((item) => {
@@ -60,10 +61,13 @@ export const identifyNlcdPixel = ({ latitude, longitude }, metadata, imageData, 
   });
   if (!legend) return { status: "unknown", message: "No NLCD observation: the display pixel has no recognized class." };
   const className = humanizeClassName(legend.label);
+  const sourceYear = Number(metadata.source_year || metadata.source?.source_year || 0) || null;
   return {
     status: "observed",
     class_value: Number(legend.value),
     class_name: className,
-    message: `NLCD class ${className} (${legend.value})`,
+    source_year: sourceYear,
+    inside_aoi: true,
+    message: `Annual NLCD ${sourceYear || ""} class ${className} (${legend.value}) · inside loaded AOI`,
   };
 };

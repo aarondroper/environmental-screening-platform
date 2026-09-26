@@ -64,13 +64,30 @@ older successful jobs do not regress to metrics-only mode. HTTP-level
 regression coverage verifies metadata and asset delivery, and the existing
 client lineage checks remain in force.
 
+### NLCD raster-display and identify recovery
+
+Verified on 2026-09-26 with Colorado job
+`27a5c1fa-e7d9-4523-aa95-177ca45b87ea`. The native source remains EPSG:5070
+with its original affine transform, while the browser PNG is now a separate
+north-up EPSG:4326 grid with explicit display bounds, transform, dimensions,
+pixel size, and nodata metadata. The display bounds match the four-corner
+axis-aligned transform, and exact AOI masking keeps outside-AOI/nodata pixels
+transparent. The actual preview retained source snapshot/version/checksum and
+AOI revision/hash lineage. A real interior pixel identified as Annual NLCD
+2025 class 23, `Developed Medium Intensity`; an outside-AOI click returned
+`Outside the loaded AOI.`. That artifact had zero nodata pixels inside the AOI,
+so deterministic fixture coverage verifies the explicit nodata message.
+Map clicks now always have a visible loading, unavailable, class, outside-AOI,
+or nodata outcome instead of silently doing nothing.
+
 The checked-in NLCD display derivative is `frontend/public/demo/nlcd-preview.png`
-(3,486 bytes, SHA-256
-`1c4923005aeb4781f8c15ba3d0e7a1d8ecf53e57e1d045751fa864f1605721d2`), with
+(5,132 bytes, SHA-256
+`6eec92572064b083431486b164c7670dfb569702e492da4a2ec0ebbc465b3785`), with
 matching provenance in `frontend/public/demo/nlcd-preview.json`. It was derived
 from the retained 863,154-byte source artifact without redownload; its metadata
-records source version/snapshot, source checksum, retrieval time, EPSG:5070
-transform and bounds, AOI revision/hash, and the WGS84 overlay bounds.
+records source version/snapshot, source checksum, retrieval time, native
+EPSG:5070 transform/bounds, north-up EPSG:4326 display transform/bounds, AOI
+revision/hash, and display nodata behavior.
 
 The checked-in 3DEP display derivative is `frontend/public/demo/3dep-preview.png`
 (4,802 bytes, SHA-256

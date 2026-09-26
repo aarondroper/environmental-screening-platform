@@ -503,6 +503,20 @@ confirmed external persistence, metadata and asset HTTP delivery, exact AOI and
 source checksum lineage, and the existing client-side raster/identify checks.
 No source selection, screening metric, or frontend design behavior changed.
 
+## Focused raster-display and identify repair — AOI-specific NLCD
+
+**Status:** Completed 2026-09-26
+
+The NLCD browser derivative now preserves native source-grid metadata while
+publishing a separate north-up EPSG:4326 display grid. Leaflet bounds and
+client-side pixel indexing use that display grid, categorical reprojection is
+nearest-neighbor, and AOI/nodata masking remains transparent. Every map click
+now produces an observed class, outside-AOI, nodata, loading, or unavailable
+message. The actual Colorado local-bridge smoke verified display metadata,
+lineage, asset checksums, valid-class identify, and outside-AOI behavior; the
+Colorado artifact contained no AOI nodata cells, while deterministic fixtures
+cover the explicit nodata response.
+
 ## Milestone 7 — Backend API and operational endpoints
 
 **Priority:** P1

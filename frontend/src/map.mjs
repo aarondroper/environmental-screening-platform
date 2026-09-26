@@ -61,20 +61,26 @@ const setIdentifyMessage = (element, result) => {
   target.className = `map-identify map-identify-${result.status}`;
 };
 
-const installNlcdIdentify = (element, map, overlay, metadata, aoi) => {
+const createNlcdIdentifyHandler = (element, overlay, metadata, aoi) => {
   const image = overlay.getElement?.();
-  if (!image || typeof document === "undefined") return;
+  if (!image || typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
-  canvas.width = Number(metadata.raster?.width || image.naturalWidth);
-  canvas.height = Number(metadata.raster?.height || image.naturalHeight);
+  const displayRaster = metadata.display_raster || metadata.raster;
+  canvas.width = Number(displayRaster?.width || image.naturalWidth);
+  canvas.height = Number(displayRaster?.height || image.naturalHeight);
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context || !canvas.width || !canvas.height) return;
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-  map.on("click", (event) => setIdentifyMessage(
+  if (!context || !canvas.width || !canvas.height) return null;
+  let imageData;
+  try {
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  } catch {
+    return null;
+  }
+  return (event) => setIdentifyMessage(
     element,
     identifyNlcdPixel(event.latlng, metadata, imageData, aoi),
-  ));
+  );
 };
 
 const validatePreviewMetadata = (metadata, preview, aoi, sourceLabel) => {
@@ -83,6 +89,7 @@ const validatePreviewMetadata = (metadata, preview, aoi, sourceLabel) => {
   }
   const source = metadata.source || {};
   const alignment = metadata.alignment || {};
+  const displayRaster = metadata.display_raster || metadata.raster || {};
   if (source.source_id && source.source_id !== preview.source_id) {
     throw new Error(`${sourceLabel} preview source identity does not match the recorded report`);
   }
@@ -99,10 +106,22 @@ const validatePreviewMetadata = (metadata, preview, aoi, sourceLabel) => {
   if (!Array.isArray(bounds) || bounds.length !== 4 || bounds.some((value) => !Number.isFinite(Number(value)))) {
     throw new Error(`${sourceLabel} preview has no valid WGS84 overlay bounds`);
   }
+  if (displayRaster.crs !== "EPSG:4326" && displayRaster.crs !== "EPSG:3857") {
+    throw new Error(`${sourceLabel} preview display CRS is not web compatible`);
+  }
+  if (!Number.isInteger(Number(displayRaster.width)) || !Number.isInteger(Number(displayRaster.height))
+    || Number(displayRaster.width) <= 0 || Number(displayRaster.height) <= 0) {
+    throw new Error(`${sourceLabel} preview has invalid display dimensions`);
+  }
+  const transform = displayRaster.transform || alignment.display_transform;
+  if (!Array.isArray(transform) || transform.length < 6
+    || Number(transform[1]) !== 0 || Number(transform[3]) !== 0) {
+    throw new Error(`${sourceLabel} preview display transform is not north-up`);
+  }
   return bounds;
 };
 
-const mountRasterPreview = (element, map, boundary, aoi, preview, key, sourceLabel, zIndex) => {
+const mountRasterPreview = (element, map, boundary, aoi, preview, key, sourceLabel, zIndex, onIdentifyReady) => {
   if (preview?.status !== "available") return;
   setPreviewState(element, key, "loading", `Loading ${sourceLabel} preview…`);
   fetch(preview.metadata_url)
@@ -122,7 +141,13 @@ const mountRasterPreview = (element, map, boundary, aoi, preview, key, sourceLab
       overlay.once("load", () => {
         if (!defaultVisible) map.removeLayer(overlay);
         boundary.bringToFront();
-        if (key === "nlcd") installNlcdIdentify(element, map, overlay, metadata, aoi);
+        if (key === "nlcd") {
+          const identifyHandler = createNlcdIdentifyHandler(element, overlay, metadata, aoi);
+          onIdentifyReady?.(identifyHandler);
+          if (!identifyHandler) {
+            setIdentifyMessage(element, { status: "unavailable", message: "NLCD identify unavailable: the display image could not be read." });
+          }
+        }
         setPreviewState(element, key, "available", "");
       });
       overlay.once("error", () => {
@@ -142,7 +167,13 @@ const mountRasterPreview = (element, map, boundary, aoi, preview, key, sourceLab
       opacity?.addEventListener("input", () => overlay.setOpacity(Number(opacity.value)));
       overlay.addTo(map);
     })
-    .catch((error) => setPreviewState(element, key, "error", `${sourceLabel} preview unavailable: ${error.message}`));
+    .catch((error) => {
+      if (key === "nlcd") {
+        onIdentifyReady?.(null);
+        setIdentifyMessage(element, { status: "unavailable", message: `NLCD identify unavailable: ${error.message}` });
+      }
+      setPreviewState(element, key, "error", `${sourceLabel} preview unavailable: ${error.message}`);
+    });
 };
 
 export const fitMapToAoi = (map, boundary) => map.fitBounds(boundary.getBounds(), { padding: [28, 28], maxZoom: 16 });
@@ -161,8 +192,28 @@ export const mountAoiMap = (element, aoi, previews = {}) => {
     style: { color: "#075f52", weight: 3, opacity: 1, fillColor: "#58aa96", fillOpacity: 0.36 },
   }).addTo(map);
   fitMapToAoi(map, layer);
+  let nlcdIdentifyHandler = null;
+  map.on("click", (event) => {
+    if (nlcdIdentifyHandler) {
+      nlcdIdentifyHandler(event);
+      return;
+    }
+    setIdentifyMessage(element, previews.annual_nlcd?.status === "available"
+      ? { status: "loading", message: "NLCD identify is still loading. Try the map again shortly." }
+      : { status: "unavailable", message: "NLCD identify unavailable: no AOI-specific preview is attached." });
+  });
   mountRasterPreview(element, map, layer, aoi, previews["3dep"], "3dep", "3DEP terrain", 200);
-  mountRasterPreview(element, map, layer, aoi, previews.annual_nlcd, "nlcd", "NLCD", 300);
+  mountRasterPreview(
+    element,
+    map,
+    layer,
+    aoi,
+    previews.annual_nlcd,
+    "nlcd",
+    "NLCD",
+    300,
+    (handler) => { nlcdIdentifyHandler = handler; },
+  );
   tileLayer.once("load", () => setMapState(element, "ready", ""));
   tileLayer.on("tileerror", () => setMapState(element, "error", "Public basemap unavailable. The recorded AOI boundary remains shown, but map context could not be loaded."));
   window.setTimeout(() => {

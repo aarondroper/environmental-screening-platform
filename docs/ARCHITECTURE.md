@@ -269,6 +269,14 @@ checksum, source year, CRS, transform, dimensions, nodata, and display
 transformation; the frontend validates that lineage before rendering. Invalid
 or empty input is rejected without repair, clipping, or expansion.
 
+The NLCD browser derivative has a separate display grid: native EPSG:5070
+metadata remains under `source.raster`, while the PNG is reprojected with
+nearest-neighbor categorical resampling to a north-up EPSG:4326 grid recorded
+under `display_raster`. Leaflet uses that display grid's axis-aligned WGS84
+bounds, and the browser pixel indexer uses its width/height and bounds rather
+than the native transform. This prevents a projected source rectangle from
+being treated as a geographic image rectangle.
+
 The bridge response contract is source-keyed: a successful Annual NLCD result
 is exposed as `browser_previews.annual_nlcd`, with job-scoped metadata and asset
 URLs. The preview generator creates one derivative object, and the bridge

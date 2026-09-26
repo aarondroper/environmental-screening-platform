@@ -35,6 +35,8 @@ test("supports a provenance-checked NLCD image overlay with controls", async () 
   assert.match(map, /validatePreviewMetadata/);
   assert.match(map, /imageOverlay/);
   assert.match(map, /overlay_bounds_wgs84/);
+  assert.match(map, /displayRaster/);
+  assert.match(map, /north-up/);
   assert.match(map, /data-nlcd-visibility/);
   assert.match(map, /data-\$\{key\}-opacity/);
   assert.match(map, /source version or checksum/);
@@ -85,7 +87,10 @@ test("identifies an NLCD class by human-readable name and preserves unknown stat
     0, 0, 0, 0, 0, 0, 0, 0,
   ]) };
   const aoi = { geometry: { type: "Polygon", coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] } };
-  assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 0.5 }, metadata, imageData, aoi).message, "NLCD class Developed High Intensity (24)");
+  const observed = identifyNlcdPixel({ latitude: 1.5, longitude: 0.5 }, { ...metadata, source_year: 2025 }, imageData, aoi);
+  assert.equal(observed.message, "Annual NLCD 2025 class Developed High Intensity (24) · inside loaded AOI");
+  assert.equal(observed.source_year, 2025);
+  assert.equal(observed.inside_aoi, true);
   assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 1.5 }, metadata, imageData, aoi).status, "nodata");
   assert.equal(identifyNlcdPixel({ latitude: 3, longitude: 1 }, metadata, imageData, aoi).status, "outside_coverage");
   assert.equal(identifyNlcdPixel({ latitude: 1, longitude: 3 }, metadata, imageData, aoi).status, "outside_coverage");
@@ -96,4 +101,43 @@ test("identifies a location outside the loaded AOI separately from raster covera
   const imageData = { width: 1, height: 1, data: new Uint8ClampedArray([0, 0, 0, 255]) };
   const aoi = { geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } };
   assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 1.5 }, metadata, imageData, aoi).status, "outside_aoi");
+});
+
+test("maps all four display-grid corners to the correct categorical pixels", () => {
+  const metadata = {
+    display_raster: {
+      crs: "EPSG:4326",
+      width: 2,
+      height: 2,
+      transform: [1, 0, 0, 0, -1, 2],
+      nodata: 250,
+    },
+    alignment: { overlay_bounds_wgs84: [0, 0, 2, 2] },
+    legend: [
+      { value: 22, label: "developed_low_intensity", color: "#d99282" },
+      { value: 23, label: "developed_medium_intensity", color: "#eb0000" },
+    ],
+  };
+  const imageData = {
+    width: 2,
+    height: 2,
+    data: new Uint8ClampedArray([
+      217, 146, 130, 255, 235, 0, 0, 255,
+      235, 0, 0, 255, 217, 146, 130, 255,
+    ]),
+  };
+  const aoi = { geometry: { type: "Polygon", coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] } };
+  assert.equal(identifyNlcdPixel({ latitude: 1.75, longitude: 0.25 }, metadata, imageData, aoi).class_value, 22);
+  assert.equal(identifyNlcdPixel({ latitude: 1.75, longitude: 1.75 }, metadata, imageData, aoi).class_value, 23);
+  assert.equal(identifyNlcdPixel({ latitude: 0.25, longitude: 0.25 }, metadata, imageData, aoi).class_value, 23);
+  assert.equal(identifyNlcdPixel({ latitude: 0.25, longitude: 1.75 }, metadata, imageData, aoi).class_value, 22);
+});
+
+test("always exposes explicit identify behavior while the preview is loading or unavailable", async () => {
+  const map = await readFile(new URL("../src/map.mjs", import.meta.url), "utf8");
+  const identify = await readFile(new URL("../src/nlcd-identify.mjs", import.meta.url), "utf8");
+  assert.match(map, /map\.on\("click"/);
+  assert.match(map, /NLCD identify is still loading/);
+  assert.match(identify, /Outside the loaded AOI/);
+  assert.match(identify, /No NLCD observation at this location/);
 });
