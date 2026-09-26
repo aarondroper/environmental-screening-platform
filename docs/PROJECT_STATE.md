@@ -22,8 +22,10 @@ screening evidence, an incomplete/rejected SSURGO package path, and status-only
 PAD-US/FEMA outcomes. The primary workspace keeps the Leaflet AOI map dominant,
 shows a compact collapsed layer-availability control, compact independent
 source findings, and primary tabs for Screening, Reports, and Data sources.
-Observed metrics are inline; hashes, IDs, and detailed provenance remain in
-the data-source details and separate operations view. The operations view
+The checked-in demonstration also renders a masked Annual NLCD 2025 display
+derivative with observed-class legend, opacity, and toggle controls; 3DEP
+remains metrics-only. Observed metrics are inline; hashes, IDs, and detailed
+provenance remain in the data-source details and separate operations view. The operations view
 exposes plans, attempts, checksums,
 validation, promotion, active versions, immutable snapshots, and lifecycle
 detail. `npm test` and `npm run build` are
@@ -32,6 +34,14 @@ backend, environmental provider access, PostGIS connection, raw artifact,
 authentication, worker, or new screening behavior was added. The primary map
 requests attributed public OpenStreetMap tiles and reports a visible error if
 the basemap cannot load.
+
+The checked-in NLCD display derivative is `frontend/public/demo/nlcd-preview.png`
+(3,486 bytes, SHA-256
+`1c4923005aeb4781f8c15ba3d0e7a1d8ecf53e57e1d045751fa864f1605721d2`), with
+matching provenance in `frontend/public/demo/nlcd-preview.json`. It was derived
+from the retained 863,154-byte source artifact without redownload; its metadata
+records source version/snapshot, source checksum, retrieval time, EPSG:5070
+transform and bounds, AOI revision/hash, and the WGS84 overlay bounds.
 
 ## Implemented Milestone 2B slice
 

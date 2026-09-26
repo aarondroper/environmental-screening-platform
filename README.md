@@ -172,7 +172,8 @@ map-centric screening workspace that reads the checked-in
 `frontend/public/demo/report.json`, a recorded Washington, DC smoke result. It
 uses the recorded AOI geometry and source-specific metrics in a bundled
 Leaflet map with an attributed public OpenStreetMap basemap. The map layer
-control renders the AOI boundary and truthfully identifies NLCD/3DEP as
+control renders the AOI boundary and the masked Annual NLCD 2025 display
+derivative with its observed-class legend and opacity control. 3DEP remains
 metrics-only; SSURGO, PAD-US, and FEMA remain incomplete, conditional, or
 unavailable rather than being represented by invented overlays. Secondary tabs
 expose reports/exports, data-source availability, and technical provenance.

@@ -97,10 +97,10 @@ test("renders the environmental screening workspace as the primary map-centric e
   assert.match(html, /data-screening-source="fema_nfhl"/);
   assert.match(html, /data-screening-source="padus"/);
   assert.match(html, /class="aoi-map"/);
-  assert.match(html, /Recorded AOI geometry boundary/);
+  assert.match(html, /Recorded AOI boundary/);
   assert.match(html, /Technical view/);
   assert.match(html, /No composite score/);
-  assert.match(html, /Recorded AOI geometry boundary/);
+  assert.match(html, /Recorded AOI boundary/);
 });
 
 test("shows recorded NLCD and 3DEP metrics without inventing a cross-source result", () => {
@@ -147,11 +147,23 @@ test("keeps the persistent layer control truthful about rendered and non-rendere
   assert.doesNotMatch(html, /class="workspace-layer-control" aria-label="Map layer availability" open/);
   assert.match(html, /data-aoi-visibility/);
   assert.match(html, /AOI boundary/);
-  assert.match(html, /Annual NLCD 2025.*Metrics only/);
+  assert.match(html, /Annual NLCD 2025.*Display preview/);
+  assert.match(html, /data-nlcd-visibility/);
+  assert.match(html, /data-nlcd-opacity/);
+  assert.match(html, /nlcd-legend/);
+  assert.match(html, /developed_high_intensity/);
   assert.match(html, /USGS 3DEP.*Metrics only/);
   assert.match(html, /NRCS SSURGO.*Incomplete/);
   assert.match(html, /PAD-US.*Conditional \/ unknown/);
   assert.match(html, /FEMA NFHL.*Unavailable \/ blocked/);
+  assert.match(html, /display derivative/);
+});
+
+test("renders the NLCD preview as optional and honest when its metadata is absent", () => {
+  const withoutPreview = { ...report, browser_previews: undefined };
+  const html = renderScreeningReport(withoutPreview);
+  assert.doesNotMatch(html, /data-nlcd-visibility/);
+  assert.match(html, /Annual NLCD 2025.*Metrics only/);
   assert.match(html, /no browser-ready raster overlay is included/);
 });
 
@@ -173,6 +185,8 @@ test("renders secondary data-source and activity views without changing the reco
   assert.match(sources, /Hydric-soil information is soil information/);
   assert.match(sources, /Operations view/);
   assert.match(sources, /recorded-nlcd-snapshot/);
+  assert.match(sources, /Display derivative/);
+  assert.match(sources, /demo\/nlcd-preview\.json/);
   assert.doesNotMatch(sources, /Activity \/ provenance/);
 });
 

@@ -28,3 +28,13 @@ test("the browser route has explicit map loading and error states", async () => 
   assert.match(main, /AOI map unavailable/);
   assert.match(main, /mountAoiMap/);
 });
+
+test("supports a provenance-checked NLCD image overlay with controls", async () => {
+  const map = await readFile(new URL("../src/map.mjs", import.meta.url), "utf8");
+  assert.match(map, /validatePreviewMetadata/);
+  assert.match(map, /imageOverlay/);
+  assert.match(map, /overlay_bounds_wgs84/);
+  assert.match(map, /data-nlcd-visibility/);
+  assert.match(map, /data-nlcd-opacity/);
+  assert.match(map, /source version or checksum/);
+});

@@ -2,6 +2,26 @@
   "report_type": "aoi_operational_run",
   "report_version": 1,
   "demo_notice": "Recorded demonstration result from the retained Washington, DC smoke scenario. This fixture is read-only and is not a live provider view.",
+  "browser_previews": {
+    "annual_nlcd": {
+      "status": "available",
+      "asset_url": "demo/nlcd-preview.png",
+      "metadata_url": "demo/nlcd-preview.json",
+      "display_derivative": true,
+      "source_snapshot_id": "recorded-nlcd-snapshot",
+      "source_version_id": "annual_nlcd:a8bcc633fd343366a5a135a3390eb02b8ecb21ce14ecd1f263a1886f9a344284",
+      "source_sha256": "6bc353d127a2a7d5a66c8152cfea099f271275e172d0924c18470fc0d93a6c4e",
+      "aoi_revision": 1,
+      "aoi_geometry_sha256": "216677406ea7cb6817db15c205ae9c4c952e425985dddf2149219eece6506fbc",
+      "source_year": 2025,
+      "opacity_default": 0.58,
+      "legend": [
+        { "value": 22, "label": "developed_low_intensity", "color": "#d99282" },
+        { "value": 23, "label": "developed_medium_intensity", "color": "#eb0000" },
+        { "value": 24, "label": "developed_high_intensity", "color": "#ab0000" }
+      ]
+    }
+  },
   "project": {
     "project_id": "2644c8a3-5c40-41f1-975a-76b10cd446ad",
     "name": "Generic live smoke Washington DC"

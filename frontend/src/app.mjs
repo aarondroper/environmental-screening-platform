@@ -289,8 +289,18 @@ const renderAoiMap = (aoi) => {
   return `<div class="aoi-map" data-aoi-map><div class="map-state map-state-loading" data-map-status role="status">Loading public basemap…</div></div>`;
 };
 
-const layerState = (row) => {
-  if (row.id === "annual_nlcd" || row.id === "3dep") {
+const layerState = (row, previews = {}) => {
+  if (row.id === "annual_nlcd") {
+    const preview = previews.annual_nlcd;
+    if (preview?.status === "available") {
+      return { state: "observed", label: "NLCD 2025 preview", detail: "Categorical display derivative; source metrics remain authoritative." };
+    }
+    if (preview?.status && preview.status !== "available") {
+      return { state: "unavailable", label: "Preview unavailable", detail: "The recorded NLCD raster is available, but no browser preview can be used." };
+    }
+    return { state: row.result ? "observed" : "unknown", label: "Metrics only", detail: "Recorded raster metrics; no browser-ready raster overlay is included." };
+  }
+  if (row.id === "3dep") {
     return { state: row.result ? "observed" : "unknown", label: "Metrics only", detail: "Recorded raster metrics; no browser-ready raster overlay is included." };
   }
   if (row.id === "ssurgo") return { state: "incomplete", label: "Incomplete", detail: "Fixture coverage is incomplete; no soil layer is rendered." };
@@ -310,44 +320,54 @@ const workspaceMetricSummary = (row) => {
   return "No source-specific metric recorded";
 };
 
-const workspaceSourceRow = (row) => {
-  const layer = layerState(row);
+const workspaceSourceRow = (row, previews = {}) => {
+  const layer = layerState(row, previews);
   return `<details class="workspace-source" data-screening-source="${escapeHtml(row.id)}">
     <summary class="workspace-source-summary"><span class="workspace-source-name"><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.id)}</small></span><span class="workspace-source-teaser">${escapeHtml(workspaceMetricSummary(row))}</span><span class="status-stack">${screeningStatus(row)}</span></summary>
     <div class="workspace-source-detail"><div class="workspace-source-state"><span class="layer-state layer-state-${escapeHtml(layer.state)}">${escapeHtml(layer.label)}</span><span>${escapeHtml(layer.detail)}</span></div><dl class="workspace-metrics">${screeningMetrics(row).join("")}</dl><p>${escapeHtml(row.result ? (row.result.observation_status === "data_observed" ? "Observed in the recorded AOI result." : row.result.observation_status) : row.source.status_only_reason || "No source-specific screening result was recorded.")}</p><a class="workspace-secondary-link" href="?tab=sources">View source details and provenance</a><p class="muted">${escapeHtml(row.id === "ssurgo" ? "Hydric-soil information; not a wetlands inventory or regulatory determination." : row.id === "fema_nfhl" ? "Unmapped or unavailable FEMA areas remain unknown, not hazard-free." : row.id === "padus" ? "No PAD-US geometry is rendered because the source remains conditional/quarantined." : "No cross-source score or suitability conclusion is calculated.")}</p></div>
   </details>`;
 };
 
-const workspaceLayerControl = (rows) => `<details class="workspace-layer-control" aria-label="Map layer availability">
-  <summary><span><strong>Layers</strong><small>AOI boundary and source availability</small></span><span class="layer-count">1 rendered</span></summary>
+const workspaceLayerControl = (rows, previews = {}) => {
+  const preview = previews.annual_nlcd;
+  const nlcdAvailable = preview?.status === "available";
+  const renderedCount = nlcdAvailable ? 2 : 1;
+  const legend = nlcdAvailable && preview.legend?.length ? `<div class="nlcd-legend" aria-label="Annual NLCD 2025 observed classes"><strong>Observed classes</strong>${preview.legend.map((item) => `<span><i style="background:${escapeHtml(item.color)}"></i><b>${escapeHtml(item.value)}</b> ${escapeHtml(item.label)}</span>`).join("")}</div>` : "";
+  const nlcdLayer = nlcdAvailable
+    ? `<div class="workspace-layer workspace-layer-active"><label class="workspace-layer-toggle"><input type="checkbox" checked data-nlcd-visibility><span class="layer-swatch nlcd-swatch"></span><span><strong>Annual NLCD 2025</strong><small data-nlcd-status>Display preview · visible</small></span></label><span class="layer-opacity"><span>Opacity</span><input id="nlcd-opacity" type="range" min="0.25" max="0.9" step="0.05" value="${escapeHtml(preview.opacity_default ?? 0.58)}" data-nlcd-opacity></span><small class="layer-error" data-nlcd-error hidden></small></div>`
+    : `<div class="workspace-layer workspace-layer-${escapeHtml(layerState(rows.find((row) => row.id === "annual_nlcd") || { id: "annual_nlcd", result: null }, previews).state)}"><span class="layer-swatch source-swatch"></span><span><strong>Annual NLCD 2025</strong><small>${escapeHtml(preview?.status ? "Preview unavailable" : "Metrics only · no preview")}</small></span></div>`;
+  return `<details class="workspace-layer-control" aria-label="Map layer availability">
+  <summary><span><strong>Layers</strong><small>AOI boundary and source availability</small></span><span class="layer-count" data-layer-count>${renderedCount} rendered</span></summary>
   <div class="workspace-layer-list"><label class="workspace-layer workspace-layer-active"><input type="checkbox" checked data-aoi-visibility><span class="layer-swatch aoi-swatch"></span><span><strong>AOI boundary</strong><small>Visible on map</small></span></label>
-  ${rows.map((row) => { const layer = layerState(row); return `<div class="workspace-layer workspace-layer-${escapeHtml(layer.state)}"><span class="layer-swatch source-swatch"></span><span><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(layer.label)}</small></span></div>`; }).join("")}</div>
-  <details class="workspace-layer-limitations"><summary>Layer limitations</summary><p>Only the recorded AOI boundary is rendered. NLCD and 3DEP have metrics but no browser-ready preview in this report. SSURGO, PAD-US, and FEMA are not rendered as environmental overlays.</p></details>
+  ${nlcdLayer}${rows.filter((row) => row.id !== "annual_nlcd").map((row) => { const layer = layerState(row, previews); return `<div class="workspace-layer workspace-layer-${escapeHtml(layer.state)}"><span class="layer-swatch source-swatch"></span><span><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(layer.label)}</small></span></div>`; }).join("")}</div>
+  ${legend}<details class="workspace-layer-limitations"><summary>Layer limitations</summary><p>The NLCD preview is a display derivative of the recorded 2025 source raster, masked to the AOI with nodata and outside-AOI pixels transparent. 3DEP has metrics but no browser-ready preview. SSURGO, PAD-US, and FEMA are not rendered as environmental overlays.</p></details>
 </details>`;
+};
 
 const workspaceTabs = (activeTab) => {
   const tabs = [["results", "Screening"], ["reports", "Reports"], ["sources", "Data sources"]];
   return `<nav class="workspace-tabs" aria-label="Screening workspace sections">${tabs.map(([id, label]) => `<a class="workspace-tab ${activeTab === id ? "workspace-tab-active" : ""}" aria-current="${activeTab === id ? "page" : "false"}" href="?tab=${id}">${label}</a>`).join("")}</nav>`;
 };
 
-const workspaceResultsPanel = (rows) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source summary</p><h2>Independent findings</h2></div><span class="muted">No composite score</span></div><div class="workspace-source-list">${rows.map(workspaceSourceRow).join("")}</div><details class="workspace-info"><summary>Interpretation limits</summary><p>Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.” No regulatory, safety, or suitability conclusion is produced.</p></details></div>`;
+const workspaceResultsPanel = (rows, previews = {}) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source summary</p><h2>Independent findings</h2></div><span class="muted">No composite score</span></div><div class="workspace-source-list">${rows.map((row) => workspaceSourceRow(row, previews)).join("")}</div><details class="workspace-info"><summary>Interpretation limits</summary><p>Unknown, unavailable, incomplete, nodata, pending, and quarantined states are not “no constraint observed.” No regulatory, safety, or suitability conclusion is produced.</p></details></div>`;
 
 const workspaceReportsPanel = () => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Recorded outputs</p><h2>Reports and exports</h2></div></div><p class="muted">These controls expose only artifacts present in the recorded demonstration. No live processing or provider access is performed.</p><div class="workspace-action-list"><a class="workspace-action workspace-action-primary" href="demo/report.json" download>Download JSON report</a><span class="workspace-action workspace-action-disabled" aria-disabled="true">CSV not included in fixture</span><span class="workspace-action workspace-action-disabled" aria-disabled="true">GeoJSON not included in fixture</span><a class="workspace-action" href="demo/report.json" target="_blank" rel="noreferrer">View underlying JSON</a></div></div>`;
 
-const workspaceSourcesPanel = (rows) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source catalog</p><h2>Data sources</h2></div><a class="workspace-secondary-link" href="?view=operations">Operations view</a></div><div class="workspace-source-catalog">${rows.map((row) => { const layer = layerState(row); const source = row.source; const candidate = source.candidates?.at(-1) || {}; const version = source.active_aoi_versions?.at(-1) || source.source_versions?.at(-1) || {}; return `<div class="workspace-catalog-row"><div><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(source.provider_release || candidate.provider_release || version.provider_release || "Release not recorded")}</small></div><div>${screeningStatus(row)}<small>${escapeHtml(layer.label)}</small></div><p>${escapeHtml(layer.detail)}</p><details><summary>Version and provenance</summary>${screeningProvenance(row)}</details></div>`; }).join("")}</div><p class="workspace-guardrail">PAD-US and FEMA are shown as source states only. Hydric-soil information is soil information, not a wetlands inventory or regulatory determination.</p></div>`;
+const workspaceSourcesPanel = (rows, previews = {}) => `<div class="workspace-panel-content"><div class="workspace-panel-heading"><div><p class="eyebrow">Source catalog</p><h2>Data sources</h2></div><a class="workspace-secondary-link" href="?view=operations">Operations view</a></div><div class="workspace-source-catalog">${rows.map((row) => { const layer = layerState(row, previews); const preview = previews[row.id]; const source = row.source; const candidate = source.candidates?.at(-1) || {}; const version = source.active_aoi_versions?.at(-1) || source.source_versions?.at(-1) || {}; return `<div class="workspace-catalog-row"><div><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(source.provider_release || candidate.provider_release || version.provider_release || "Release not recorded")}</small></div><div>${screeningStatus(row)}<small>${escapeHtml(layer.label)}</small></div><p>${escapeHtml(layer.detail)}</p>${preview?.status === "available" ? `<p class="workspace-preview-provenance"><strong>Display derivative</strong> · ${escapeHtml(preview.source_year)} · source version <code>${escapeHtml(preview.source_version_id)}</code> · <a href="${escapeHtml(preview.metadata_url)}" target="_blank" rel="noreferrer">metadata</a></p>` : ""}<details><summary>Version and provenance</summary>${screeningProvenance(row)}</details></div>`; }).join("")}</div><p class="workspace-guardrail">PAD-US and FEMA are shown as source states only. Hydric-soil information is soil information, not a wetlands inventory or regulatory determination.</p></div>`;
 
 export const renderScreeningReport = (report = {}, requestedTab = "results") => {
   const project = report.project || {};
   const aoi = report.aoi || {};
   const area = aoi.area || {};
   const rows = sourceRows(report);
+  const previews = report.browser_previews || {};
   const screenedRows = rows.filter((row) => row.result);
   const activeTab = ["results", "reports", "sources"].includes(requestedTab) ? requestedTab : "results";
-  const tabPanel = activeTab === "reports" ? workspaceReportsPanel() : activeTab === "sources" ? workspaceSourcesPanel(rows) : workspaceResultsPanel(rows);
+  const tabPanel = activeTab === "reports" ? workspaceReportsPanel() : activeTab === "sources" ? workspaceSourcesPanel(rows, previews) : workspaceResultsPanel(rows, previews);
   return `<div class="workspace-shell">
     <header class="workspace-header"><div class="workspace-header-project"><span class="workspace-mark">ES</span><div><h1>${escapeHtml(project.name || "Recorded environmental screening")}</h1><span>${formatNumber(area.value_sqkm, 5)} km² · AOI revision ${escapeHtml(aoi.revision)} · recorded demonstration</span></div></div><div class="workspace-header-status"><span class="badge badge-partial">Partial result</span><span>${formatNumber(screenedRows.length, 0)} of ${formatNumber(rows.length, 0)} sources observed</span></div><div class="workspace-header-actions"><a class="workspace-action workspace-action-primary" href="demo/report.json" download>Export JSON</a><a class="workspace-tech-link" href="?view=operations">Technical view</a></div></header>
     ${workspaceTabs(activeTab)}
-    <main class="workspace-main"><section class="workspace-map-stage"><div class="workspace-map-toolbar"><div><strong>Area of interest</strong><span>WGS84 · ${escapeHtml(aoi.policy || "generic")}</span></div><span class="workspace-map-status">Recorded AOI boundary</span></div><div class="workspace-map-wrap">${renderAoiMap(aoi)}${workspaceLayerControl(rows)}</div><div class="map-caption"><span>Recorded AOI geometry boundary shown; source overlays are not present in this fixture.</span></div></section><aside class="workspace-sidebar"><div class="workspace-sidebar-head"><div><p class="eyebrow">${activeTab === "results" ? "Screening summary" : "Workspace view"}</p><h2>${escapeHtml(activeTab === "results" ? "Source findings" : activeTab === "reports" ? "Reports" : "Data sources")}</h2><span class="workspace-preliminary">Preliminary screening · no composite score</span></div><span class="workspace-sidebar-count">${formatNumber(rows.length, 0)} sources</span></div>${tabPanel}</aside></main>
+    <main class="workspace-main"><section class="workspace-map-stage"><div class="workspace-map-toolbar"><div><strong>Area of interest</strong><span>WGS84 · ${escapeHtml(aoi.policy || "generic")}</span></div><span class="workspace-map-status">Recorded AOI boundary</span></div><div class="workspace-map-wrap">${renderAoiMap(aoi)}${workspaceLayerControl(rows, previews)}</div><div class="map-caption"><span>Recorded AOI boundary and available NLCD display preview shown; source metrics remain independent.</span></div></section><aside class="workspace-sidebar"><div class="workspace-sidebar-head"><div><p class="eyebrow">${activeTab === "results" ? "Screening summary" : "Workspace view"}</p><h2>${escapeHtml(activeTab === "results" ? "Source findings" : activeTab === "reports" ? "Reports" : "Data sources")}</h2><span class="workspace-preliminary">Preliminary screening · no composite score</span></div><span class="workspace-sidebar-count">${formatNumber(rows.length, 0)} sources</span></div>${tabPanel}</aside></main>
   </div>`;
 };
 

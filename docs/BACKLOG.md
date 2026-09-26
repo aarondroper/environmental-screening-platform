@@ -100,10 +100,27 @@ long technical explanations are kept out of the primary view and remain
 available through the Data Sources, Reports, Activity, and operations views.
 
 **Explicit limits:** The recorded AOI map and all source states/metrics are
-unchanged. Only the AOI boundary is rendered; NLCD/3DEP remain metrics-only,
-and SSURGO, PAD-US, and FEMA retain their incomplete, conditional, unknown, or
-unavailable semantics. Mobile uses the existing scrollable workspace tabs and
-separate map/summary regions; this is not a new live application workflow.
+unchanged. At this point only the NLCD display derivative and AOI boundary are
+rendered; 3DEP remains metrics-only, and SSURGO, PAD-US, and FEMA retain their
+incomplete, conditional, unknown, or unavailable semantics. Mobile uses the
+existing scrollable workspace tabs and separate map/summary regions; this is
+not a new live application workflow.
+
+## Milestone 2B.24 — Browser-renderable Annual NLCD preview
+
+**Status:** Implemented for the recorded Washington, DC demonstration. A
+derived RGBA PNG is generated from the retained validated Annual NLCD 2025
+GeoTIFF, masked to the exact immutable AOI. A checked-in metadata document
+records the source version, snapshot, checksum, raster grid/bounds, AOI hash,
+observed class values, display transformation, and preview checksum.
+
+The primary Leaflet map loads the preview as an optional image overlay with
+transparent nodata/outside-AOI pixels, a documented categorical legend,
+adjustable opacity, a toggle, AOI boundary-on-top ordering, and an explicit
+unavailable state if metadata or the asset cannot be loaded. The PNG is a
+display derivative only; the source raster and screening metrics remain
+authoritative. No provider access, redownload, resampling, composite score, or
+3DEP/SSURGO/PAD-US/FEMA behavior changed.
 
 ## Milestone 1 — Geography and source feasibility
 
