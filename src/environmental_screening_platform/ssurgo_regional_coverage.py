@@ -201,7 +201,9 @@ def _load_candidate_inputs(
     package_reports = lineage.get("package_reports", [])
     expected_packages = NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_expected_package_count
     if len(package_reports) != expected_packages:
-        raise ValueError(f"Candidate does not contain the expected {expected_packages}-package lineage")
+        raise ValueError(
+            f"Candidate does not contain the expected {expected_packages}-package lineage"
+        )
     batch_ids = [str(item["batch_id"]) for item in package_reports]
     if len(batch_ids) != len(set(batch_ids)):
         raise ValueError("Candidate package lineage contains duplicate staging batches")

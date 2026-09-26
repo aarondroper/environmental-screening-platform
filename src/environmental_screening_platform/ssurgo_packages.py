@@ -27,9 +27,7 @@ from .models import (
 from .regression_fixtures import NORTHERN_COLORADO_REGRESSION_FIXTURE
 from .store import fetch_raw
 
-SSURGO_REGIONAL_SIZING = (
-    NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_sizing_record_relative_path
-)
+SSURGO_REGIONAL_SIZING = NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_sizing_record_relative_path
 SSURGO_PACKAGE_MAX_BYTES = 100_000_000
 APPROVED_GEOIDS = frozenset(NORTHERN_COLORADO_REGRESSION_FIXTURE.county_geoids)
 OFFICIAL_PACKAGE_HOST = "websoilsurvey.sc.egov.usda.gov"

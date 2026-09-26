@@ -109,8 +109,7 @@ def _load_staging_inputs(
     expected_packages = NORTHERN_COLORADO_REGRESSION_FIXTURE.ssurgo_expected_package_count
     if not isinstance(package_paths, list) or len(package_paths) != expected_packages:
         raise ValueError(
-            "SSURGO staging aggregate does not list exactly "
-            f"{expected_packages} package reports"
+            f"SSURGO staging aggregate does not list exactly {expected_packages} package reports"
         )
     for relative in package_paths:
         report_path = _require_file(

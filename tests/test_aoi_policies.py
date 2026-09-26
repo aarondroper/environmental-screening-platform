@@ -20,11 +20,7 @@ def _aoi_file(path: Path, bounds: tuple[float, float, float, float]) -> Path:
     minx, miny, maxx, maxy = bounds
     path.write_text(
         json.dumps(
-            mapping(
-                Polygon(
-                    [(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy), (minx, miny)]
-                )
-            )
+            mapping(Polygon([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy), (minx, miny)]))
         ),
         encoding="utf-8",
     )
@@ -41,7 +37,9 @@ def _boundary_cache(root: Path) -> None:
                 "features": [
                     {
                         "type": "Feature",
-                        "geometry": mapping(Polygon([(-106, 39), (-103, 39), (-103, 42), (-106, 42), (-106, 39)])),
+                        "geometry": mapping(
+                            Polygon([(-106, 39), (-103, 39), (-103, 42), (-106, 42), (-106, 39)])
+                        ),
                         "properties": {},
                     }
                 ],

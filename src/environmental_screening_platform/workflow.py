@@ -550,9 +550,7 @@ def create_project(
     data_root = _ensure_external_data_root(data_root)
     session = session or requests.Session()
     selected_policy = validation_policy or policy_by_id(None)
-    boundary = (
-        _load_boundary(session, data_root) if selected_policy.boundary_required else None
-    )
+    boundary = _load_boundary(session, data_root) if selected_policy.boundary_required else None
     geom, input_hash = _parse_aoi(aoi_path)
     spatial = _validate_aoi(geom, boundary, policy=selected_policy)
     project_id = _id()
@@ -596,9 +594,7 @@ def revise_aoi(
         raise FileNotFoundError("Project does not exist")
     project = read_json(project_path)
     selected_policy = validation_policy or policy_by_id(project.get("aoi_validation_policy"))
-    boundary = (
-        read_json(paths["boundary"]) if selected_policy.boundary_required else None
-    )
+    boundary = read_json(paths["boundary"]) if selected_policy.boundary_required else None
     geom, input_hash = _parse_aoi(aoi_path)
     spatial = _validate_aoi(geom, boundary, policy=selected_policy)
     revision = int(project["current_aoi_revision"]) + 1
