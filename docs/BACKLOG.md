@@ -25,8 +25,6 @@ The 2026-09-25 live generic-AOI smoke passed for both paths using a dedicated Wa
 
 **Remaining boundary:** No source promotion, FEMA/PAD-US acquisition, new tiling, screening change, UI/API, or production readiness is included. The next slice should be selected from the AOI-agnostic ETL backlog only after reviewing parent-run behavior against live generic acquisition and the existing inactive-candidate rules.
 
-## Milestone 1 — Geography and source feasibility
-
 ## Milestone 2B.18 — AOI-scoped generic raster candidate promotion
 
 **Status:** Implemented. Generic Annual NLCD and 3DEP candidates use the
@@ -39,6 +37,19 @@ an auditable decision, and preserves the previous AOI pointer on failure.
 maturity is unchanged. The next work should address the hosted/production
 repository boundary or another explicitly selected AOI-agnostic ETL slice,
 not infer regional production readiness from these local pointers.
+
+## Milestone 2B.19 — Snapshot-pinned active NLCD/3DEP screening
+
+**Status:** Implemented. `screen-active` consumes only exact AOI-scoped active
+Annual NLCD and 3DEP pointers through immutable job snapshots, reuses the
+existing raster processors, and preserves independent metrics and complete
+provenance in all exports.
+
+**Remaining boundary:** Fixture-only paths remain unchanged. SSURGO, PAD-US,
+and FEMA are not consumed or promoted by this slice, and source maturity and
+regional production readiness remain unresolved.
+
+## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite
 

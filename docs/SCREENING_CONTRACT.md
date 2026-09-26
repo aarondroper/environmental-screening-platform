@@ -153,6 +153,18 @@ change an existing job snapshot, and an active pointer cannot be resolved for
 a different AOI revision. Incomplete, unavailable, failed, nodata-containing,
 or otherwise ineligible candidates remain inactive with explicit reasons.
 
+The generic `screen-active` workflow accepts one or both of `nlcd` and `3dep`
+for a persisted project and immutable AOI revision. It resolves only the
+matching AOI-scoped active pointer, persists the complete source snapshot
+before processing, and reads the promoted artifact named by that snapshot.
+Missing, unavailable, incomplete, or rejected active state remains an explicit
+source result; no legacy global pointer, fixture path, raw acquisition
+candidate, or newer version is substituted. NLCD reports valid/nodata pixels,
+class counts/percentages, coverage, native raster metadata, and source year.
+3DEP reports valid/nodata cells, elevation summaries, coverage, native raster
+metadata, and declared units/datum where available. Retry reuses the same
+immutable snapshots and a later promotion affects only a newly created job.
+
 ## 7. Asynchronous job states and failure semantics
 
 The target request path validates input and references, pins AOI/source versions, creates a job, and returns promptly. The Milestone 2B CLI currently creates a file-backed job and invokes the local worker synchronously (job-oriented, not a separate asynchronous queue service). It transitions `queued → processing → completed` or `queued/processing → failed`.

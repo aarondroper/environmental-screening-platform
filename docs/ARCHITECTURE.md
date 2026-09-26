@@ -204,6 +204,17 @@ unchanged. Candidate failures remain queryable with an auditable rejection
 decision. The legacy `active_versions` pointer remains for existing unscoped
 fixture behavior. SSURGO, PAD-US, and FEMA are not enabled by this slice.
 
+The `screen-active` coordinator is the active-version consumer for these two
+sources. It passes the project/AOI scope to snapshot creation with legacy
+global fallback disabled, persists the immutable snapshot rows, and invokes
+the existing raster processors against the snapshot's promoted artifact path.
+The raster readers window large native tiles to the AOI while retaining full
+source dimensions/grid metadata; outside-AOI and nodata areas remain explicit.
+The result/export layer labels these outcomes `active_aoi`, carries the active
+pointer/source-version/candidate/run/checksum lineage, and emits only a
+meaningful 3DEP footprint when available. Fixture modes use the same processors
+with their existing `fixture_only` labels.
+
 When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 
 ## Processing pipelines

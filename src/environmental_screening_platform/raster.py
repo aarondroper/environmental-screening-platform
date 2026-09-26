@@ -1,4 +1,4 @@
-"""Snapshot-pinned raster screening helpers for bounded source fixtures."""
+"""Snapshot-pinned raster screening helpers for bounded source artifacts."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 from rasterio.features import geometry_mask
+from rasterio.windows import Window, from_bounds
 from shapely.geometry import Polygon, box, mapping
 from shapely.ops import transform
 
@@ -57,10 +58,10 @@ def _read_raster_window(
 ) -> _RasterWindow:
     """Read one single-band raster and derive shared AOI/grid accounting."""
     with rasterio.open(artifact_path) as dataset:
-        if dataset.count != 1 or dataset.width * dataset.height > max_cells:
-            raise ValueError(f"Raster fixture must contain one band and at most {max_cells} cells")
+        if dataset.count != 1:
+            raise ValueError("Raster must contain exactly one band")
         if dataset.crs is None:
-            raise ValueError("Raster fixture has no CRS metadata")
+            raise ValueError("Raster has no CRS metadata")
         to_raster = Transformer.from_crs("EPSG:4326", dataset.crs, always_xy=True).transform
         aoi_raster = transform(to_raster, aoi_4326)
         to_analysis = Transformer.from_crs(dataset.crs, ANALYSIS_CRS, always_xy=True).transform
@@ -72,11 +73,28 @@ def _read_raster_window(
         aoi_area_sqm = float(aoi_analysis.area)
         covered_area_sqm = float(transform(to_analysis, footprint_aoi).area)
         coverage_fraction = covered_area_sqm / aoi_area_sqm if aoi_area_sqm else 0.0
-        values = dataset.read(1)
+        if footprint_aoi.is_empty:
+            read_window = Window(0, 0, 1, 1)
+        elif dataset.width * dataset.height <= max_cells:
+            read_window = Window(0, 0, dataset.width, dataset.height)
+        else:
+            read_window = (
+                from_bounds(
+                    *footprint_aoi.bounds,
+                    transform=dataset.transform,
+                )
+                .round_offsets()
+                .round_lengths()
+            )
+            read_window = read_window.intersection(Window(0, 0, dataset.width, dataset.height))
+        if read_window.width * read_window.height > max_cells:
+            raise ValueError(f"AOI raster window exceeds the {max_cells}-cell screening limit")
+        values = dataset.read(1, window=read_window)
+        read_transform = dataset.window_transform(read_window)
         inside = geometry_mask(
             [mapping(aoi_raster)],
             out_shape=values.shape,
-            transform=dataset.transform,
+            transform=read_transform,
             invert=True,
             all_touched=True,
         )
@@ -85,10 +103,10 @@ def _read_raster_window(
         if nodata is not None:
             valid &= values != nodata
         corners = [
-            dataset.transform @ (0, 0),
-            dataset.transform @ (1, 0),
-            dataset.transform @ (1, 1),
-            dataset.transform @ (0, 1),
+            read_transform @ (0, 0),
+            read_transform @ (1, 0),
+            read_transform @ (1, 1),
+            read_transform @ (0, 1),
         ]
         cell_area_sqm = float(Polygon([to_analysis(x, y) for x, y in corners]).area)
         metadata = {
@@ -101,6 +119,12 @@ def _read_raster_window(
             "nodata": _json_number(nodata),
             "bounds": [float(value) for value in dataset.bounds],
             "cell_area_sqm": round(cell_area_sqm, 3),
+            "read_window": [
+                float(read_window.col_off),
+                float(read_window.row_off),
+                float(read_window.width),
+                float(read_window.height),
+            ],
         }
         footprint_wgs84 = transform(
             Transformer.from_crs(dataset.crs, "EPSG:4326", always_xy=True).transform,
@@ -129,6 +153,7 @@ def screen_nlcd_raster(
     source_snapshot_id: str,
     source_version_id: str,
     provenance: dict[str, Any],
+    source_status: str = "fixture_only",
 ) -> dict[str, Any]:
     """Read one exact NLCD artifact and summarize only the requested AOI.
 
@@ -185,7 +210,7 @@ def screen_nlcd_raster(
         "observation_status": observation_status.value,
         "provenance": result_provenance,
         "metrics": {
-            "source_status": "fixture_only",
+            "source_status": source_status,
             "screening_status": screening_status,
             "source_year": NLCD_SOURCE_YEAR,
             "raster_coverage_area_sqm": round(window.covered_area_sqm, 3),
@@ -220,6 +245,7 @@ def screen_3dep_raster(
     source_snapshot_id: str,
     source_version_id: str,
     provenance: dict[str, Any],
+    source_status: str = "fixture_only",
 ) -> dict[str, Any]:
     """Summarize raw elevation values from one exact 3DEP snapshot artifact."""
     window = _read_raster_window(artifact_path, aoi_4326, max_cells=12_000_000)
@@ -285,7 +311,7 @@ def screen_3dep_raster(
                     "spatial_representation": "raster_footprint",
                     "source_snapshot_id": source_snapshot_id,
                     "source_version_id": source_version_id,
-                    "source_status": "fixture_only",
+                    "source_status": source_status,
                     "crs": raster_metadata["crs"],
                     "resolution": raster_metadata["resolution"],
                     "nodata": raster_metadata["nodata"],
@@ -298,7 +324,7 @@ def screen_3dep_raster(
         if window.covered_area_sqm > 0
         else [],
         "metrics": {
-            "source_status": "fixture_only",
+            "source_status": source_status,
             "screening_status": screening_status,
             "source_year": None,
             "raster_coverage_area_sqm": round(window.covered_area_sqm, 3),

@@ -123,6 +123,22 @@ The command writes a deterministic plan before provider access, creates one pare
 
 This creates one `fixtures` job for the validated Census AOI revision. It runs the existing SSURGO, Annual NLCD, and 3DEP fixture processors against their immutable source snapshots, and includes PAD-US (`conditionally_validated`/quarantined) and FEMA (`access_blocked`) in the source-status matrix without processing either source. JSON preserves nested source results; CSV has one row per source plus repeated matrix metadata; GeoJSON contains only the AOI and meaningful SSURGO/3DEP geometries. `job_status=completed` does not mean complete evidence: inspect `overall_status`, `job_outcome`, and each source's coverage/observation state.
 
+For generic screening from promoted AOI-scoped raster versions, use:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" screen-active \
+  --project-id PROJECT_ID --aoi-id AOI_ID --sources nlcd 3dep
+```
+
+This creates immutable snapshots of only the exact active Annual NLCD and/or
+3DEP versions for that project/AOI revision, then processes the promoted
+artifacts named by those snapshots. It never falls back to a global fixture or
+unpromoted candidate. Results retain active/source version IDs, candidate and
+ingestion-run lineage, AOI geometry hash, checksums, raster metrics, and
+coverage/nodata states. Retrying a failed job reuses the original snapshots;
+promoting a later version requires a new job. NLCD and 3DEP remain independent
+descriptive metrics; no composite or regulatory conclusion is produced.
+
 The SSURGO command creates a single-source `ssurgo_fixture_only` job. It reports exact snapshot/version provenance, fixture-only status, covered/uncovered AOI area, map-unit/component metrics, and hydric-soil attributes. It never selects latest data or claims regional SSURGO coverage. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. Active regional canonical environmental layers and regional tiling are not implemented.
 
 Source ingestion is separately available as a candidate-first operator workflow. For example:

@@ -120,6 +120,8 @@ class SourceRepository(Protocol):
         aoi_revision: int,
         source_ids: list[str],
         project_id: str | None = None,
+        require_aoi_scoped_active: bool = False,
+        aoi_geometry_sha256: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def get_job_snapshots(self, job_id: str) -> list[dict[str, Any]]: ...
@@ -962,10 +964,16 @@ class SQLiteSourceRepository:
         aoi_revision: int,
         source_ids: list[str],
         project_id: str | None = None,
+        require_aoi_scoped_active: bool = False,
+        aoi_geometry_sha256: str | None = None,
     ) -> list[dict[str, Any]]:
         """Resolve and persist one immutable active-version view for the entire job."""
         if not source_ids or len(source_ids) != len(set(source_ids)):
             raise ValueError("A job snapshot requires a nonempty unique source list")
+        if require_aoi_scoped_active and project_id is None:
+            raise ValueError("AOI-scoped active snapshots require a project identifier")
+        if require_aoi_scoped_active and not aoi_geometry_sha256:
+            raise ValueError("AOI-scoped active snapshots require the immutable AOI geometry hash")
         now = utc_now()
         with self._transaction() as db:
             existing = db.execute(
@@ -1011,7 +1019,11 @@ class SQLiteSourceRepository:
                     latest_is_aoi_scoped = bool(
                         latest_validation.get("source_provenance", {}).get("aoi_geometry_sha256")
                     )
-                    if active is None and not latest_is_aoi_scoped:
+                    if (
+                        active is None
+                        and not latest_is_aoi_scoped
+                        and not require_aoi_scoped_active
+                    ):
                         active = db.execute(
                             """SELECT v.*,a.promoted_at FROM active_versions a
                                JOIN source_versions v USING(version_id) WHERE a.source_id=?""",
@@ -1064,6 +1076,15 @@ class SQLiteSourceRepository:
                     "snapshot_at": now,
                     "requested_source_id": source_id,
                 }
+                if require_aoi_scoped_active and project_id is not None:
+                    provenance.update(
+                        {
+                            "project_id": project_id,
+                            "aoi_id": aoi_id,
+                            "aoi_revision": aoi_revision,
+                            "aoi_geometry_sha256": aoi_geometry_sha256,
+                        }
+                    )
 
                 if active is not None:
                     provenance.update(
@@ -1079,9 +1100,31 @@ class SQLiteSourceRepository:
                             "terms_url": active["terms_url"],
                             "adapter_version": active["adapter_version"],
                             "promoted_at": active["promoted_at"],
+                            "active_version_id": active["version_id"],
                         }
                     )
-                    if candidate is None:
+                    if scoped_source:
+                        provenance.update(
+                            {
+                                "project_id": active["project_id"],
+                                "aoi_id": active["aoi_id"],
+                                "aoi_revision": active["aoi_revision"],
+                                "aoi_geometry_sha256": active["aoi_geometry_sha256"],
+                            }
+                        )
+                    if (
+                        scoped_source
+                        and aoi_geometry_sha256 is not None
+                        and active["aoi_geometry_sha256"] != aoi_geometry_sha256
+                    ):
+                        snapshot_status = "incomplete"
+                        reason = (
+                            "Active version geometry hash does not match the requested immutable AOI revision; "
+                            "no substitute acquisition was attempted."
+                        )
+                        coverage = "unknown"
+                        observation = "incomplete_source"
+                    elif candidate is None:
                         snapshot_status = "incomplete"
                         reason = "Active version has no promoted candidate validation record."
                         maturity_value = "not_acquired"
@@ -1162,23 +1205,45 @@ class SQLiteSourceRepository:
                             "latest_validation": validation,
                         }
                     )
-                    if latest["status"] == "blocked":
-                        snapshot_status = "blocked"
-                        maturity_value = "access_blocked"
-                    elif latest["status"] == "quarantined":
-                        snapshot_status = "quarantined"
-                        maturity_value = "conditionally_validated"
-                    elif latest["status"] == "incomplete":
+                    latest_validation_provenance = validation.get("source_provenance", {})
+                    if require_aoi_scoped_active and source_id in {"annual_nlcd", "3dep"}:
                         snapshot_status = "incomplete"
-                    else:
-                        snapshot_status = "incomplete"
+                        coverage = "unknown"
+                        observation = "incomplete_source"
                         reason = (
-                            "A candidate exists but is not an eligible active version; "
-                            "screening did not substitute it."
+                            "No AOI-scoped active version existed for the requested AOI revision; "
+                            "an unpromoted or differently scoped candidate was not substituted."
                         )
-                    reason = (json.loads(latest["error_json"]) if latest["error_json"] else {}).get(
-                        "message", "No promoted active source version existed at job creation."
-                    )
+                        if latest_validation_provenance:
+                            provenance["latest_candidate_aoi_id"] = (
+                                latest_validation_provenance.get("aoi_id")
+                            )
+                            provenance["latest_candidate_aoi_revision"] = (
+                                latest_validation_provenance.get("aoi_revision")
+                            )
+                            provenance["latest_candidate_aoi_geometry_sha256"] = (
+                                latest_validation_provenance.get("aoi_geometry_sha256")
+                            )
+                    else:
+                        if latest["status"] == "blocked":
+                            snapshot_status = "blocked"
+                            maturity_value = "access_blocked"
+                        elif latest["status"] == "quarantined":
+                            snapshot_status = "quarantined"
+                            maturity_value = "conditionally_validated"
+                        elif latest["status"] == "incomplete":
+                            snapshot_status = "incomplete"
+                        else:
+                            snapshot_status = "incomplete"
+                            reason = (
+                                "A candidate exists but is not an eligible active version; "
+                                "screening did not substitute it."
+                            )
+                        reason = (
+                            json.loads(latest["error_json"]) if latest["error_json"] else {}
+                        ).get(
+                            "message", "No promoted active source version existed at job creation."
+                        )
                 elif source_id == "padus":
                     maturity_value = "conditionally_validated"
                     coverage = "unknown"

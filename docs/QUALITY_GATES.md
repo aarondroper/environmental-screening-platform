@@ -39,6 +39,8 @@ For the generic multi-source AOI ingestion slice, run `pytest tests/test_aoi_ing
 
 For AOI-scoped raster promotion, run `pytest tests/test_aoi_raster_promotion.py` and inspect `screening promote-candidate --help` and `screening active-version --help`. Confirm that generic Annual NLCD and 3DEP promotion requires the exact project, immutable AOI revision, geometry hash, acquisition run, and source-version lineage; rehashes the external artifact; checks complete AOI coverage, native raster metadata, eligible observation state, and zero AOI nodata; and writes an auditable decision plus an AOI-scoped active pointer. Confirm that checksum, AOI, version, coverage, nodata, and failed-replacement cases remain inactive and do not change a prior active pointer. Confirm that unscoped fixture aliases and SSURGO/PAD-US/FEMA states are unchanged.
 
+For snapshot-pinned active raster screening, run `pytest tests/test_active_screening.py` and inspect `screening screen-active --help`. Confirm that only the exact AOI-scoped active NLCD/3DEP pointers are snapshotted and processed, missing/unpromoted states remain explicit, native raster windows/metadata and nodata accounting are preserved, retry reuses the original snapshots, later promotion affects only a new job, and JSON/CSV/GeoJSON retain AOI and source lineage. The retained Washington, DC smoke is opt-in via `ESGP_RUN_LIVE_SMOKE=1`; it performs no network acquisition.
+
 ## Evidence and scope gate
 
 - Inspect the actual repository, git status, relevant code, tests, configuration, and executable behavior before changing or claiming anything.

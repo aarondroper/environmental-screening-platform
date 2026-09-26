@@ -129,3 +129,11 @@ The external manifest records both successful artifacts, the retained failed NLC
 **Verified scope:** Successful NLCD and 3DEP candidates promote idempotently for their own AOI, failed or incomplete replacements preserve a prior AOI-scoped active version, and mismatched AOI/hash/version/checksum/coverage/metadata candidates remain inactive with auditable rejection decisions. Screening snapshots resolve the exact AOI-scoped pointer; a later promotion does not alter an existing job. Legacy unscoped fixture promotion and Northern Colorado aliases remain unchanged.
 
 **Explicit limits:** This slice does not promote SSURGO, PAD-US, or FEMA, does not alter screening algorithms, and does not establish source maturity or regional production readiness. Active raster pointers remain local SQLite control-plane metadata; PostGIS raster loading and hosted deployment are future work.
+
+## Milestone 2B.19 — Snapshot-pinned active NLCD/3DEP screening
+
+**Status:** Implemented with deterministic tests and an opt-in retained-artifact Washington, DC smoke. `screen-active` accepts one or both generic `nlcd`/`3dep` sources for a persisted project and immutable AOI revision, requires exact AOI-scoped active pointers, snapshots them before processing, and reads only their promoted artifact paths.
+
+**Verified scope:** NLCD results include valid/nodata pixels, class counts/percentages, coverage, native raster metadata, and source year. 3DEP results include valid/nodata cells, elevation summaries, coverage, native raster metadata, and declared units/datum when present. JSON, CSV, and GeoJSON preserve project/AOI/geometry-hash, snapshot, active-version/source-version, candidate/run, checksum, and provenance fields. Missing or unpromoted sources remain explicit incomplete/unknown states; retries reuse original snapshots and later promotion affects only new jobs. Large native rasters are window-read to the AOI without fabricating pixel geometries.
+
+**Explicit limits:** This slice does not alter fixture-only commands or Northern Colorado aliases and does not consume SSURGO, PAD-US, or FEMA. Raster source maturity and production readiness remain bounded by prior validation scopes; no composite, safety, suitability, or regulatory conclusion is produced.

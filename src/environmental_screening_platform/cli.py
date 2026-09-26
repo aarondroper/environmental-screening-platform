@@ -111,6 +111,20 @@ def _parser() -> argparse.ArgumentParser:
     dep_submit.add_argument("--project-id", required=True)
     dep_submit.add_argument("--aoi-id")
 
+    active_submit = sub.add_parser(
+        "screen-active",
+        help="Run snapshot-pinned screening from AOI-scoped active NLCD/3DEP versions",
+    )
+    active_submit.add_argument("--project-id", required=True)
+    active_submit.add_argument("--aoi-id", required=True)
+    active_submit.add_argument(
+        "--sources",
+        nargs="+",
+        choices=("nlcd", "3dep"),
+        required=True,
+        help="AOI-scoped active sources to screen",
+    )
+
     fixtures_submit = sub.add_parser(
         "screen-fixtures",
         help="Run the bounded multi-source fixture screening workflow",
@@ -372,6 +386,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.aoi_id,
             source_ids=("3dep",),
             screening_mode="3dep_fixture_only",
+        )
+        result = run_job(job["job_id"], args.data_dir)
+        outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}
+    elif args.command == "screen-active":
+        source_ids = tuple("annual_nlcd" if source == "nlcd" else "3dep" for source in args.sources)
+        job = create_job(
+            args.project_id,
+            args.data_dir,
+            args.aoi_id,
+            source_ids=source_ids,
+            screening_mode="active_aoi",
+            require_aoi_scoped_active=True,
         )
         result = run_job(job["job_id"], args.data_dir)
         outcome = {"job": job_status(job["job_id"], args.data_dir), "result": result}

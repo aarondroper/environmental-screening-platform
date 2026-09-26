@@ -133,6 +133,7 @@ def _result_from_snapshot(
     *,
     aoi_geometry_wkt: str | None = None,
     spatial_repository: SpatialRepository | None = None,
+    active_aoi_mode: bool = False,
 ) -> SourceResult:
     """Materialize the screening contract's source outcome from one immutable snapshot."""
     source_id = snapshot["source_id"]
@@ -179,6 +180,18 @@ def _result_from_snapshot(
             )
 
     validation = provenance.get("validation", {})
+    raster_source_status = "active_aoi" if active_aoi_mode else "fixture_only"
+    raster_product_status = "active_aoi_version" if active_aoi_mode else "fixture_only"
+    nlcd_validation_scope = (
+        "AOI-scoped active Annual NLCD version."
+        if active_aoi_mode
+        else "Representative Annual NLCD fixture only."
+    )
+    dep_validation_scope = (
+        "AOI-scoped active 3DEP version."
+        if active_aoi_mode
+        else "Representative 3DEP fixture only."
+    )
     if source_id == "ssurgo" and status == "active":
         fixture_provenance = dict(provenance)
         fixture_status = "fixture_only"
@@ -254,12 +267,10 @@ def _result_from_snapshot(
             return SourceResult(
                 source_id=source_id,
                 validation_status=Maturity(snapshot["source_maturity"]),
-                validation_scope=validation.get(
-                    "validation_scope", "Representative Annual NLCD fixture only."
-                ),
+                validation_scope=validation.get("validation_scope", nlcd_validation_scope),
                 coverage_status=Coverage.UNAVAILABLE,
                 observation_status=Observation.UNAVAILABLE,
-                product_status="fixture_only",
+                product_status=raster_product_status,
                 attempt_status=AttemptStatus.FAILED,
                 provenance=raster_provenance,
                 reason="Snapshot-pinned NLCD screening requires the job AOI geometry.",
@@ -269,12 +280,10 @@ def _result_from_snapshot(
             return SourceResult(
                 source_id=source_id,
                 validation_status=Maturity(snapshot["source_maturity"]),
-                validation_scope=validation.get(
-                    "validation_scope", "Representative Annual NLCD fixture only."
-                ),
+                validation_scope=validation.get("validation_scope", nlcd_validation_scope),
                 coverage_status=Coverage.UNAVAILABLE,
                 observation_status=Observation.UNAVAILABLE,
-                product_status="fixture_only",
+                product_status=raster_product_status,
                 attempt_status=AttemptStatus.FAILED,
                 provenance=raster_provenance,
                 reason="The snapshotted NLCD source has no external raster artifact path.",
@@ -286,38 +295,40 @@ def _result_from_snapshot(
                 source_snapshot_id=snapshot["snapshot_id"],
                 source_version_id=snapshot["version_id"],
                 provenance=raster_provenance,
+                source_status=raster_source_status,
             )
         except (OSError, RasterioError, ValueError) as exc:
             return SourceResult(
                 source_id=source_id,
                 validation_status=Maturity(snapshot["source_maturity"]),
-                validation_scope=validation.get(
-                    "validation_scope", "Representative Annual NLCD fixture only."
-                ),
+                validation_scope=validation.get("validation_scope", nlcd_validation_scope),
                 coverage_status=Coverage.UNAVAILABLE,
                 observation_status=Observation.UNAVAILABLE,
-                product_status="fixture_only",
+                product_status=raster_product_status,
                 attempt_status=AttemptStatus.FAILED,
                 provenance=raster_provenance,
                 reason=f"Snapshot-pinned NLCD raster could not be screened: {exc}",
             )
         raster_provenance.update(screened["provenance"])
+        nlcd_warnings = [
+            "NLCD classes are land-cover classifications, not regulatory constraints or suitability conclusions."
+        ]
+        if not active_aoi_mode:
+            nlcd_warnings.insert(
+                0,
+                "Annual NLCD is a representative fixture/smoke raster; full regional coverage and production readiness are not established.",
+            )
         return SourceResult(
             source_id=source_id,
             validation_status=Maturity(snapshot["source_maturity"]),
-            validation_scope=validation.get(
-                "validation_scope", "Representative Annual NLCD fixture only."
-            ),
+            validation_scope=validation.get("validation_scope", nlcd_validation_scope),
             coverage_status=Coverage(screened["coverage_status"]),
             observation_status=Observation(screened["observation_status"]),
-            product_status="fixture_only",
+            product_status=raster_product_status,
             attempt_status=AttemptStatus.VALIDATED,
             metrics=screened["metrics"],
             provenance=raster_provenance,
-            warnings=[
-                "Annual NLCD is a representative fixture/smoke raster; full regional coverage and production readiness are not established.",
-                "NLCD classes are land-cover classifications, not regulatory constraints or suitability conclusions.",
-            ],
+            warnings=nlcd_warnings,
         )
     if source_id == "3dep" and status == "active":
         raster_provenance = dict(provenance)
@@ -325,12 +336,10 @@ def _result_from_snapshot(
             return SourceResult(
                 source_id=source_id,
                 validation_status=Maturity(snapshot["source_maturity"]),
-                validation_scope=validation.get(
-                    "validation_scope", "Representative 3DEP fixture only."
-                ),
+                validation_scope=validation.get("validation_scope", dep_validation_scope),
                 coverage_status=Coverage.UNAVAILABLE,
                 observation_status=Observation.UNAVAILABLE,
-                product_status="fixture_only",
+                product_status=raster_product_status,
                 attempt_status=AttemptStatus.FAILED,
                 provenance=raster_provenance,
                 reason="Snapshot-pinned 3DEP screening requires the job AOI geometry.",
@@ -340,12 +349,10 @@ def _result_from_snapshot(
             return SourceResult(
                 source_id=source_id,
                 validation_status=Maturity(snapshot["source_maturity"]),
-                validation_scope=validation.get(
-                    "validation_scope", "Representative 3DEP fixture only."
-                ),
+                validation_scope=validation.get("validation_scope", dep_validation_scope),
                 coverage_status=Coverage.UNAVAILABLE,
                 observation_status=Observation.UNAVAILABLE,
-                product_status="fixture_only",
+                product_status=raster_product_status,
                 attempt_status=AttemptStatus.FAILED,
                 provenance=raster_provenance,
                 reason="The snapshotted 3DEP source has no external raster artifact path.",
@@ -357,26 +364,29 @@ def _result_from_snapshot(
                 source_snapshot_id=snapshot["snapshot_id"],
                 source_version_id=snapshot["version_id"],
                 provenance=raster_provenance,
+                source_status=raster_source_status,
             )
         except (OSError, RasterioError, ValueError) as exc:
             return SourceResult(
                 source_id=source_id,
                 validation_status=Maturity(snapshot["source_maturity"]),
-                validation_scope=validation.get(
-                    "validation_scope", "Representative 3DEP fixture only."
-                ),
+                validation_scope=validation.get("validation_scope", dep_validation_scope),
                 coverage_status=Coverage.UNAVAILABLE,
                 observation_status=Observation.UNAVAILABLE,
-                product_status="fixture_only",
+                product_status=raster_product_status,
                 attempt_status=AttemptStatus.FAILED,
                 provenance=raster_provenance,
                 reason=f"Snapshot-pinned 3DEP raster could not be screened: {exc}",
             )
         raster_provenance.update(screened["provenance"])
         warnings = [
-            "3DEP is a representative fixture/smoke raster; full regional coverage and production readiness are not established.",
             "Elevation values are reported in the source raster's declared units/datum; no conversion or derived slope is applied.",
         ]
+        if not active_aoi_mode:
+            warnings.insert(
+                0,
+                "3DEP is a representative fixture/smoke raster; full regional coverage and production readiness are not established.",
+            )
         if not screened["metrics"].get("elevation_units") or not screened["metrics"].get(
             "vertical_datum"
         ):
@@ -386,12 +396,10 @@ def _result_from_snapshot(
         return SourceResult(
             source_id=source_id,
             validation_status=Maturity(snapshot["source_maturity"]),
-            validation_scope=validation.get(
-                "validation_scope", "Representative 3DEP fixture only."
-            ),
+            validation_scope=validation.get("validation_scope", dep_validation_scope),
             coverage_status=Coverage(screened["coverage_status"]),
             observation_status=Observation(screened["observation_status"]),
-            product_status="fixture_only",
+            product_status=raster_product_status,
             attempt_status=AttemptStatus.VALIDATED,
             metrics=screened["metrics"],
             provenance=raster_provenance,
@@ -444,7 +452,12 @@ def _source_status_entry(source: dict[str, Any]) -> dict[str, Any]:
     return {
         "source_id": source["source_id"],
         "source_snapshot_id": source.get("source_snapshot_id"),
+        "active_version_id": source.get("active_version_id") or provenance.get("active_version_id"),
         "source_version_id": source.get("source_version_id"),
+        "candidate_id": source.get("candidate_id"),
+        "ingestion_run_id": source.get("ingestion_run_id"),
+        "aoi_geometry_sha256": source.get("aoi_geometry_sha256")
+        or provenance.get("aoi_geometry_sha256"),
         "validation_status": source["validation_status"],
         "coverage_status": source["coverage_status"],
         "observation_status": source["observation_status"],
@@ -615,6 +628,7 @@ def create_job(
     *,
     source_ids: Sequence[str] = SCREENING_SOURCES,
     screening_mode: str = "standard",
+    require_aoi_scoped_active: bool = False,
 ) -> dict[str, Any]:
     data_root = _ensure_external_data_root(data_root)
     paths = _repository_paths(data_root)
@@ -636,6 +650,11 @@ def create_job(
         raise ValueError("The NLCD fixture-only mode requires source_ids=['annual_nlcd']")
     if screening_mode == "3dep_fixture_only" and selected_sources != ["3dep"]:
         raise ValueError("The 3DEP fixture-only mode requires source_ids=['3dep']")
+    if screening_mode == "active_aoi" and (
+        not selected_sources
+        or any(source not in {"annual_nlcd", "3dep"} for source in selected_sources)
+    ):
+        raise ValueError("The active AOI mode requires one or both of annual_nlcd and 3dep")
     if screening_mode == "fixtures" and selected_sources != list(FIXTURE_SCREENING_SOURCES):
         raise ValueError(
             "The unified fixture mode requires the exact SSURGO, NLCD, 3DEP, PAD-US, and FEMA source set"
@@ -661,6 +680,8 @@ def create_job(
         aoi_id=selected_aoi,
         aoi_revision=int(revision["revision"]),
         source_ids=selected_sources,
+        require_aoi_scoped_active=require_aoi_scoped_active or screening_mode == "active_aoi",
+        aoi_geometry_sha256=str(revision["geometry_sha256"]),
     )
     snapshot_by_source = {snapshot["source_id"]: snapshot for snapshot in snapshots}
     job["source_snapshot_ids"] = [
@@ -705,6 +726,11 @@ def run_job(
             raise ValueError("The NLCD fixture-only mode cannot run a multi-source job")
         if effective_screening_mode == "3dep_fixture_only" and job["source_ids"] != ["3dep"]:
             raise ValueError("The 3DEP fixture-only mode cannot run a multi-source job")
+        if effective_screening_mode == "active_aoi" and (
+            not job["source_ids"]
+            or any(source not in {"annual_nlcd", "3dep"} for source in job["source_ids"])
+        ):
+            raise ValueError("The active AOI mode requires one or both of annual_nlcd and 3dep")
         if effective_screening_mode == "fixtures" and job["source_ids"] != list(
             FIXTURE_SCREENING_SOURCES
         ):
@@ -729,6 +755,7 @@ def run_job(
                     data_root,
                     aoi_geometry_wkt=aoi_geometry_wkt,
                     spatial_repository=spatial_repository,
+                    active_aoi_mode=effective_screening_mode == "active_aoi",
                 )
             except Exception as exc:
                 source_result = SourceResult(
@@ -756,9 +783,11 @@ def run_job(
             serialized.update(
                 {
                     "source_snapshot_id": snapshot["snapshot_id"],
+                    "active_version_id": snapshot["provenance"].get("active_version_id"),
                     "source_version_id": snapshot["version_id"],
                     "candidate_id": snapshot["candidate_id"],
                     "ingestion_run_id": snapshot["ingestion_run_id"],
+                    "aoi_geometry_sha256": snapshot["provenance"].get("aoi_geometry_sha256"),
                     "snapshot_status": effective_snapshot_status,
                     "snapshot_reason": source_result.reason,
                     "source_status": source_result.metrics.get("source_status")
@@ -786,6 +815,7 @@ def run_job(
             "aoi_id": revision["aoi_id"],
             "aoi_revision": revision["revision"],
             "aoi_sha256": revision["input_sha256"],
+            "aoi_geometry_sha256": revision["geometry_sha256"],
             "submitted_at": job["created_at"],
             "completed_at": utc_now(),
             "calculation_contract_version": CONTRACT_VERSION,
@@ -872,7 +902,10 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
             stream,
             fieldnames=[
                 "job_id",
+                "project_id",
+                "aoi_id",
                 "aoi_revision",
+                "aoi_geometry_sha256",
                 "job_status",
                 "overall_status",
                 "job_product_status",
@@ -888,7 +921,10 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                 "validation_scope",
                 "product_status",
                 "source_status",
+                "active_version_id",
                 "source_version_id",
+                "candidate_id",
+                "ingestion_run_id",
                 "source_url",
                 "acquired_at",
                 "sha256",
@@ -906,7 +942,10 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
             writer.writerow(
                 {
                     "job_id": result["job_id"],
+                    "project_id": result["project_id"],
+                    "aoi_id": result["aoi_id"],
                     "aoi_revision": result["aoi_revision"],
+                    "aoi_geometry_sha256": result["aoi_geometry_sha256"],
                     "job_status": result["job_status"],
                     "overall_status": result.get("overall_status", result["job_status"]),
                     "job_product_status": result.get("product_status", ""),
@@ -922,8 +961,12 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                     "validation_scope": source["validation_scope"],
                     "product_status": source["product_status"],
                     "source_status": source.get("source_status", ""),
+                    "active_version_id": source.get("active_version_id")
+                    or (source.get("provenance") or {}).get("active_version_id", ""),
                     "source_version_id": source.get("source_version_id")
                     or (source.get("provenance") or {}).get("version_id", ""),
+                    "candidate_id": source.get("candidate_id", ""),
+                    "ingestion_run_id": source.get("ingestion_run_id", ""),
                     "source_url": (source.get("provenance") or {}).get("source_url", ""),
                     "acquired_at": (source.get("provenance") or {}).get("acquired_at", ""),
                     "sha256": (source.get("provenance") or {}).get("sha256", ""),
@@ -951,6 +994,7 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                 "project_id": result["project_id"],
                 "aoi_id": result["aoi_id"],
                 "aoi_revision": result["aoi_revision"],
+                "aoi_geometry_sha256": result["aoi_geometry_sha256"],
                 "job_id": job_id,
             },
         }
@@ -965,9 +1009,17 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                         **feature.get("properties", {}),
                         "feature_type": "source_finding",
                         "source_id": source["source_id"],
+                        "project_id": result["project_id"],
+                        "aoi_id": result["aoi_id"],
+                        "aoi_revision": result["aoi_revision"],
+                        "aoi_geometry_sha256": result["aoi_geometry_sha256"],
                         "source_snapshot_id": source.get("source_snapshot_id"),
+                        "active_version_id": source.get("active_version_id"),
                         "source_version_id": source.get("source_version_id")
                         or (source.get("provenance") or {}).get("version_id"),
+                        "candidate_id": source.get("candidate_id"),
+                        "ingestion_run_id": source.get("ingestion_run_id"),
+                        "sha256": (source.get("provenance") or {}).get("sha256"),
                         "validation_status": source["validation_status"],
                         "coverage_status": source["coverage_status"],
                         "observation_status": source["observation_status"],
@@ -986,6 +1038,7 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                 "project_id": result["project_id"],
                 "aoi_id": result["aoi_id"],
                 "aoi_revision": result["aoi_revision"],
+                "aoi_geometry_sha256": result["aoi_geometry_sha256"],
                 "job_id": job_id,
                 "job_status": result["job_status"],
                 "overall_status": result.get("overall_status"),
@@ -999,7 +1052,12 @@ def export_result(job_id: str, data_root: Path, output_dir: Path) -> list[Path]:
                     {
                         "source_id": source["source_id"],
                         "source_snapshot_id": source.get("source_snapshot_id"),
+                        "active_version_id": source.get("active_version_id"),
                         "source_version_id": source.get("source_version_id"),
+                        "candidate_id": source.get("candidate_id"),
+                        "ingestion_run_id": source.get("ingestion_run_id"),
+                        "sha256": (source.get("provenance") or {}).get("sha256"),
+                        "aoi_geometry_sha256": result["aoi_geometry_sha256"],
                         "validation_status": source["validation_status"],
                         "coverage_status": source["coverage_status"],
                         "observation_status": source["observation_status"],
