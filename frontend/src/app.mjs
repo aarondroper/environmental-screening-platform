@@ -285,32 +285,8 @@ const screeningSourceCard = (row) => {
   </article>`;
 };
 
-const mapRings = (geometry) => {
-  if (!geometry) return [];
-  if (geometry.type === "Polygon") return geometry.coordinates || [];
-  if (geometry.type === "MultiPolygon") return (geometry.coordinates || []).flatMap((polygon) => polygon);
-  return [];
-};
-
 const renderAoiMap = (aoi) => {
-  const rings = mapRings(aoi.geometry);
-  if (!rings.length) return `<div class="map-empty"><strong>AOI geometry unavailable</strong><p>The recorded report does not contain a renderable geometry.</p></div>`;
-  const points = rings.flatMap((ring) => ring);
-  const rawBounds = aoi.spatial_validation?.bounds;
-  const minX = rawBounds?.[0] ?? Math.min(...points.map(([x]) => x));
-  const minY = rawBounds?.[1] ?? Math.min(...points.map(([, y]) => y));
-  const maxX = rawBounds?.[2] ?? Math.max(...points.map(([x]) => x));
-  const maxY = rawBounds?.[3] ?? Math.max(...points.map(([, y]) => y));
-  const xSpan = Math.max(maxX - minX, 0.000001);
-  const ySpan = Math.max(maxY - minY, 0.000001);
-  const project = ([x, y]) => `${(((x - minX) / xSpan) * 86 + 7).toFixed(3)},${(100 - (((y - minY) / ySpan) * 78 + 11)).toFixed(3)}`;
-  const paths = rings.map((ring) => `<path d="M ${ring.map(project).join(" L ")} Z" />`).join("");
-  return `<svg class="aoi-map" viewBox="0 0 100 100" role="img" aria-label="Recorded Washington, DC area of interest boundary">
-    <defs><pattern id="map-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="#d8e0dd" stroke-width=".25" /></pattern></defs>
-    <rect width="100" height="100" fill="url(#map-grid)" />
-    <path class="map-aoi" d="${paths.replaceAll('"', "&quot;")}" />
-    <text x="8" y="92" class="map-label">Recorded AOI boundary</text>
-  </svg>`;
+  return `<div class="aoi-map" data-aoi-map><div class="map-state map-state-loading" data-map-status role="status">Loading public basemap…</div></div>`;
 };
 
 export const renderScreeningReport = (report = {}) => {

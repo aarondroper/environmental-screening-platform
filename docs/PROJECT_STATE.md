@@ -13,7 +13,7 @@ Verified on 2026-09-25 after runtime verification of the Milestone 2B.4 AOI boun
 
 ## Read-only operations console
 
-Verified on 2026-09-26. `frontend/` contains a dependency-free static
+Verified on 2026-09-26. `frontend/` contains a bundled Leaflet static
 environmental screening report as the primary route and the existing technical
 operations console at `?view=operations`, both consuming the `report-aoi-run`
 JSON shape. A checked-in `frontend/public/demo/report.json` records the retained
@@ -24,8 +24,10 @@ metrics, provenance disclosures, limitations, and JSON export; the secondary
 view exposes plans, attempts, checksums, validation, promotion, active versions,
 immutable snapshots, and lifecycle detail. `npm test` and `npm run build` are
 the local frontend checks; serving `frontend/dist` is a static preview only. No
-backend, provider access, PostGIS connection, raw artifact, authentication,
-worker, or new screening behavior was added.
+backend, environmental provider access, PostGIS connection, raw artifact,
+authentication, worker, or new screening behavior was added. The primary map
+requests attributed public OpenStreetMap tiles and reports a visible error if
+the basemap cannot load.
 
 ## Implemented Milestone 2B slice
 

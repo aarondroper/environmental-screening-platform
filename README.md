@@ -161,6 +161,7 @@ the dependency-free frontend:
 
 ```bash
 cd frontend
+npm install
 npm test
 npm run build
 python3 -m http.server 8080 --directory dist
@@ -169,9 +170,12 @@ python3 -m http.server 8080 --directory dist
 Open <http://localhost:8080/>. The primary route is a map-centric screening
 report that reads the checked-in `frontend/public/demo/report.json`, a
 recorded Washington, DC smoke result. It uses the recorded AOI geometry and
-source-specific metrics without provider access, the Python backend, PostGIS,
-raw source downloads, or new screening behavior. It does not present a
-composite score, safety/suitability conclusion, or regulatory determination.
+source-specific metrics in a bundled Leaflet map with an attributed public
+OpenStreetMap basemap. The browser needs network access for those basemap
+tiles, but the report performs no environmental provider acquisition, backend
+processing, PostGIS access, raw source download, or new screening behavior. It
+does not present a composite score, safety/suitability conclusion, or regulatory
+determination.
 
 The report links to the secondary technical operations view at
 <http://localhost:8080/?view=operations>. That view projects the same report's
@@ -270,4 +274,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, deployment, or CI workflow yet. A dependency-free static operations console now projects one checked-in `report-aoi-run` demonstration; it is not a live frontend and does not replace the future API/worker surface. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation, bounded generic NLCD acquisition, bounded 3DEP tile planning/acquisition, and bounded generic SSURGO package acquisition are implemented. Generic SSURGO staging, mosaicking, regional coverage analysis for arbitrary AOIs, and production coverage remain future work. The live generic SSURGO smoke acquired one official DC001 package outside Northern Colorado on 2026-09-25; the result is validation-only evidence, not final source approval or production readiness. The 19 Northern Colorado package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, deployment, or CI workflow yet. A bundled Leaflet static screening report and secondary operations view project one checked-in `report-aoi-run` demonstration; they are not a live application and do not replace the future API/worker surface. The primary map uses public OpenStreetMap tiles with attribution and does not expose environmental provider data beyond the checked-in report. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation, bounded generic NLCD acquisition, bounded 3DEP tile planning/acquisition, and bounded generic SSURGO package acquisition are implemented. Generic SSURGO staging, mosaicking, regional coverage analysis for arbitrary AOIs, and production coverage remain future work. The live generic SSURGO smoke acquired one official DC001 package outside Northern Colorado on 2026-09-25; the result is validation-only evidence, not final source approval or production readiness. The 19 Northern Colorado package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.

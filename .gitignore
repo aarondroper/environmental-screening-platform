@@ -8,3 +8,4 @@ __pycache__/
 /runtime-data/
 .env
 frontend/dist/
+frontend/node_modules/

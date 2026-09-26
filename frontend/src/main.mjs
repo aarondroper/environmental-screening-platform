@@ -1,4 +1,5 @@
 import { renderReport, renderScreeningReport } from "./app.mjs";
+import { mountAoiMap } from "./map.mjs";
 
 const root = document.querySelector("#app");
 
@@ -11,6 +12,18 @@ fetch("demo/report.json")
     const operations = new URLSearchParams(window.location.search).get("view") === "operations";
     root.innerHTML = operations ? renderReport(report) : renderScreeningReport(report);
     document.title = `${report.project?.name || "Environmental Screening"} | ${operations ? "Operations" : "Screening Report"}`;
+    if (!operations) {
+      try {
+        mountAoiMap(root.querySelector("[data-aoi-map]"), report.aoi);
+      } catch (error) {
+        const status = root.querySelector("[data-map-status]");
+        if (status) {
+          status.className = "map-state map-state-error";
+          status.textContent = `AOI map unavailable: ${error.message}`;
+          status.hidden = false;
+        }
+      }
+    }
   })
   .catch((error) => {
     root.innerHTML = `<section class="panel error"><h1>Report unavailable</h1><p>${error.message}</p><p>Serve the built console over HTTP so the report fixture can be loaded.</p></section>`;
