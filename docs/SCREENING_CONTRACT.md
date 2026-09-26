@@ -143,6 +143,16 @@ Missing values are null with a reason and state, never silently coerced to zero.
 
 Milestones 2B.2–2B.3 persist a local metadata subset of this lineage in an external-directory SQLite catalog: ingestion runs/retries, acquisition attempts, checksum/release source versions, candidate artifact paths, candidate validation/coverage/error records, promotion decisions, a per-source active-version pointer, and immutable per-job source snapshots. Candidate acquisition is distinct from activation; failed or incomplete candidates remain queryable and cannot promote. Job creation resolves the active pointer for every requested source before processing. Retries reuse those snapshot rows; a new job is required for a fresh source snapshot. Milestone 2B.5 separately stores a representative SSURGO candidate and fixture-only canonical rows in PostGIS using the same explicit snapshot/version identifiers; this is not an active source version or proof of regional coverage.
 
+Generic Annual NLCD and 3DEP candidates may be promoted only for the exact
+project/AOI revision that acquired and validated them. The promotion decision
+must match the persisted AOI geometry hash and source-version checksum/size,
+the acquisition run lineage, complete AOI footprint, native raster contract,
+and zero disqualifying AOI nodata or quarantined observations. These sources
+use an AOI-scoped active pointer; a later promotion for the same AOI does not
+change an existing job snapshot, and an active pointer cannot be resolved for
+a different AOI revision. Incomplete, unavailable, failed, nodata-containing,
+or otherwise ineligible candidates remain inactive with explicit reasons.
+
 ## 7. Asynchronous job states and failure semantics
 
 The target request path validates input and references, pins AOI/source versions, creates a job, and returns promptly. The Milestone 2B CLI currently creates a file-backed job and invokes the local worker synchronously (job-oriented, not a separate asynchronous queue service). It transitions `queued → processing → completed` or `queued/processing → failed`.

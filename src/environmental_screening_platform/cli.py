@@ -259,9 +259,15 @@ def _parser() -> argparse.ArgumentParser:
 
     promote = sub.add_parser("promote-candidate", help="Explicitly promote an eligible candidate")
     promote.add_argument("--candidate-id", required=True)
+    promote.add_argument("--project-id")
+    promote.add_argument("--aoi-id")
+    promote.add_argument("--aoi-revision", type=int)
 
     active = sub.add_parser("active-version", help="Show the active source version, if any")
     active.add_argument("--source", required=True)
+    active.add_argument("--project-id")
+    active.add_argument("--aoi-id")
+    active.add_argument("--aoi-revision", type=int)
 
     postgis_migrate = sub.add_parser(
         "postgis-migrate", help="Apply the local canonical spatial schema to PostGIS"
@@ -487,9 +493,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         if outcome is None:
             raise FileNotFoundError(f"Unknown candidate {args.candidate_id}")
     elif args.command == "promote-candidate":
-        outcome = SQLiteSourceRepository(args.data_dir).promote(args.candidate_id)
+        outcome = SQLiteSourceRepository(args.data_dir).promote(
+            args.candidate_id,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+            aoi_revision=args.aoi_revision,
+        )
     elif args.command == "active-version":
-        outcome = SQLiteSourceRepository(args.data_dir).get_active(args.source)
+        outcome = SQLiteSourceRepository(args.data_dir).get_active(
+            args.source,
+            project_id=args.project_id,
+            aoi_id=args.aoi_id,
+            aoi_revision=args.aoi_revision,
+        )
     elif args.command == "postgis-migrate":
         PostGISRepository(args.database_url).migrate()
         outcome = {"status": "migrated"}

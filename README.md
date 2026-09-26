@@ -137,6 +137,25 @@ Source ingestion is separately available as a candidate-first operator workflow.
 .venv/bin/screening --data-dir "$DATA_DIR" active-version --source annual_nlcd
 ```
 
+Generic Annual NLCD and 3DEP candidates require their exact persisted AOI
+scope for promotion. For example:
+
+```bash
+.venv/bin/screening --data-dir "$DATA_DIR" promote-candidate \
+  --candidate-id CANDIDATE_ID --project-id PROJECT_ID \
+  --aoi-id AOI_ID --aoi-revision 1
+.venv/bin/screening --data-dir "$DATA_DIR" active-version \
+  --source annual_nlcd --project-id PROJECT_ID \
+  --aoi-id AOI_ID --aoi-revision 1
+```
+
+Promotion rechecks the artifact checksum/size, source-version and run
+lineage, AOI geometry hash, complete AOI footprint, native raster metadata,
+and observation state. It is idempotent and preserves a prior AOI-scoped
+active version when a replacement fails. SSURGO, PAD-US, and FEMA are not
+promoted by this AOI-scoped raster slice; the Northern Colorado fixture
+aliases and legacy unscoped fixture promotion remain unchanged.
+
 The approved three-county Annual NLCD 2025 regional acquisition is a separate validation-only workflow:
 
 ```bash

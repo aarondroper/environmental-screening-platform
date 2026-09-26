@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -15,7 +16,10 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
+from .adapters import NLCD_CLASSES, NLCD_NATIVE_CRS, NLCD_NATIVE_NODATA, NLCD_NATIVE_RESOLUTION_M
+from .aoi import AoiContext
 from .models import MATURITY, Acquisition, source_version_id, utc_now
+from .three_dep import THREEDEP_NATIVE_CRS, THREEDEP_NODATA, THREEDEP_NOMINAL_ARC_SECONDS
 
 
 class SourceRepository(Protocol):
@@ -90,7 +94,23 @@ class SourceRepository(Protocol):
 
     def list_attempts(self, run_id: str) -> list[dict[str, Any]]: ...
 
-    def promote(self, candidate_id: str) -> dict[str, Any]: ...
+    def promote(
+        self,
+        candidate_id: str,
+        *,
+        project_id: str | None = None,
+        aoi_id: str | None = None,
+        aoi_revision: int | None = None,
+    ) -> dict[str, Any]: ...
+
+    def get_active(
+        self,
+        source_id: str,
+        *,
+        project_id: str | None = None,
+        aoi_id: str | None = None,
+        aoi_revision: int | None = None,
+    ) -> dict[str, Any] | None: ...
 
     def create_job_snapshots(
         self,
@@ -99,6 +119,7 @@ class SourceRepository(Protocol):
         aoi_id: str,
         aoi_revision: int,
         source_ids: list[str],
+        project_id: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def get_job_snapshots(self, job_id: str) -> list[dict[str, Any]]: ...
@@ -254,6 +275,10 @@ class SQLiteSourceRepository:
                     source_id TEXT NOT NULL,
                     version_id TEXT,
                     previous_version_id TEXT,
+                    project_id TEXT,
+                    aoi_id TEXT,
+                    aoi_revision INTEGER,
+                    aoi_geometry_sha256 TEXT,
                     decision TEXT NOT NULL CHECK(decision IN ('promoted','rejected')),
                     reason TEXT NOT NULL,
                     decided_at TEXT NOT NULL
@@ -263,6 +288,19 @@ class SQLiteSourceRepository:
                     version_id TEXT NOT NULL REFERENCES source_versions(version_id),
                     promoted_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS active_aoi_versions (
+                    source_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    aoi_id TEXT NOT NULL,
+                    aoi_revision INTEGER NOT NULL,
+                    aoi_geometry_sha256 TEXT NOT NULL CHECK(length(aoi_geometry_sha256)=64),
+                    version_id TEXT NOT NULL REFERENCES source_versions(version_id),
+                    candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id),
+                    promoted_at TEXT NOT NULL,
+                    PRIMARY KEY(source_id, project_id, aoi_id, aoi_revision)
+                );
+                CREATE INDEX IF NOT EXISTS idx_active_aoi_version_lookup
+                    ON active_aoi_versions(source_id, project_id, aoi_id, aoi_revision);
                 CREATE TABLE IF NOT EXISTS job_source_snapshots (
                     snapshot_id TEXT PRIMARY KEY,
                     job_id TEXT NOT NULL,
@@ -315,6 +353,17 @@ class SQLiteSourceRepository:
                     ON aoi_ingestion_runs(started_at DESC);
                 """
             )
+            promotion_columns = {
+                str(row[1]) for row in db.execute("PRAGMA table_info(promotion_decisions)")
+            }
+            for column, column_type in (
+                ("project_id", "TEXT"),
+                ("aoi_id", "TEXT"),
+                ("aoi_revision", "INTEGER"),
+                ("aoi_geometry_sha256", "TEXT"),
+            ):
+                if column not in promotion_columns:
+                    db.execute(f"ALTER TABLE promotion_decisions ADD COLUMN {column} {column_type}")
 
     def create_aoi_ingestion_run(
         self,
@@ -873,15 +922,36 @@ class SQLiteSourceRepository:
             ids = [row[0] for row in db.execute(query, params).fetchall()]
             return [candidate for item in ids if (candidate := self._candidate(item, db))]
 
-    def get_active(self, source_id: str) -> dict[str, Any] | None:
+    def get_active(
+        self,
+        source_id: str,
+        *,
+        project_id: str | None = None,
+        aoi_id: str | None = None,
+        aoi_revision: int | None = None,
+    ) -> dict[str, Any] | None:
+        scoped = any(value is not None for value in (project_id, aoi_id, aoi_revision))
+        if scoped and not all(value is not None for value in (project_id, aoi_id, aoi_revision)):
+            raise ValueError("AOI-scoped active lookup requires project, AOI, and revision")
         with self._database() as db:
-            row = db.execute(
-                """SELECT a.source_id,a.version_id,a.promoted_at,v.provider_release,v.source_url,
-                          v.retrieved_at,v.media_type,v.sha256,v.byte_size,v.artifact_path,v.adapter_version
-                   FROM active_versions a JOIN source_versions v USING(version_id)
-                   WHERE a.source_id=?""",
-                (source_id,),
-            ).fetchone()
+            if scoped:
+                row = db.execute(
+                    """SELECT a.source_id,a.project_id,a.aoi_id,a.aoi_revision,
+                              a.aoi_geometry_sha256,a.candidate_id,a.version_id,a.promoted_at,
+                              v.provider_release,v.source_url,v.retrieved_at,v.media_type,
+                              v.sha256,v.byte_size,v.artifact_path,v.adapter_version
+                       FROM active_aoi_versions a JOIN source_versions v USING(version_id)
+                       WHERE a.source_id=? AND a.project_id=? AND a.aoi_id=? AND a.aoi_revision=?""",
+                    (source_id, project_id, aoi_id, aoi_revision),
+                ).fetchone()
+            else:
+                row = db.execute(
+                    """SELECT a.source_id,a.version_id,a.promoted_at,v.provider_release,v.source_url,
+                              v.retrieved_at,v.media_type,v.sha256,v.byte_size,v.artifact_path,v.adapter_version
+                       FROM active_versions a JOIN source_versions v USING(version_id)
+                       WHERE a.source_id=?""",
+                    (source_id,),
+                ).fetchone()
         return _decode(row)
 
     def create_job_snapshots(
@@ -891,6 +961,7 @@ class SQLiteSourceRepository:
         aoi_id: str,
         aoi_revision: int,
         source_ids: list[str],
+        project_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Resolve and persist one immutable active-version view for the entire job."""
         if not source_ids or len(source_ids) != len(set(source_ids)):
@@ -926,21 +997,61 @@ class SQLiteSourceRepository:
                        WHERE c.source_id=? ORDER BY c.created_at DESC,c.candidate_id LIMIT 1""",
                     (source_id,),
                 ).fetchone()
-                active = db.execute(
-                    """SELECT v.*,a.promoted_at FROM active_versions a
-                       JOIN source_versions v USING(version_id) WHERE a.source_id=?""",
-                    (source_id,),
-                ).fetchone()
+                scoped_source = source_id in {"annual_nlcd", "3dep"} and project_id is not None
+                if scoped_source:
+                    active = db.execute(
+                        """SELECT v.*,a.promoted_at,a.project_id,a.aoi_id,a.aoi_revision,
+                                  a.aoi_geometry_sha256,a.candidate_id
+                           FROM active_aoi_versions a JOIN source_versions v USING(version_id)
+                           WHERE a.source_id=? AND a.project_id=? AND a.aoi_id=?
+                             AND a.aoi_revision=?""",
+                        (source_id, project_id, aoi_id, aoi_revision),
+                    ).fetchone()
+                    latest_validation = json.loads(latest["validation_json"]) if latest else {}
+                    latest_is_aoi_scoped = bool(
+                        latest_validation.get("source_provenance", {}).get("aoi_geometry_sha256")
+                    )
+                    if active is None and not latest_is_aoi_scoped:
+                        active = db.execute(
+                            """SELECT v.*,a.promoted_at FROM active_versions a
+                               JOIN source_versions v USING(version_id) WHERE a.source_id=?""",
+                            (source_id,),
+                        ).fetchone()
+                        scoped_source = False
+                else:
+                    active = db.execute(
+                        """SELECT v.*,a.promoted_at FROM active_versions a
+                           JOIN source_versions v USING(version_id) WHERE a.source_id=?""",
+                        (source_id,),
+                    ).fetchone()
                 candidate = None
                 if active is not None:
-                    candidate = db.execute(
-                        """SELECT c.*,r.run_id,r.aoi_id,r.aoi_revision,r.project_id,r.adapter_version,
-                                  r.status AS run_status
-                           FROM candidates c JOIN ingestion_runs r USING(run_id)
-                           WHERE c.source_id=? AND c.version_id=? AND c.promotion_status='promoted'
-                           ORDER BY c.created_at DESC LIMIT 1""",
-                        (source_id, active["version_id"]),
-                    ).fetchone()
+                    if scoped_source:
+                        candidate = db.execute(
+                            """SELECT c.*,r.run_id,r.aoi_id,r.aoi_revision,r.project_id,r.adapter_version,
+                                      r.status AS run_status
+                               FROM candidates c JOIN ingestion_runs r USING(run_id)
+                               WHERE c.source_id=? AND c.version_id=? AND c.candidate_id=?
+                                 AND c.promotion_status='promoted'
+                                 AND r.project_id=? AND r.aoi_id=? AND r.aoi_revision=?""",
+                            (
+                                source_id,
+                                active["version_id"],
+                                active["candidate_id"],
+                                project_id,
+                                aoi_id,
+                                aoi_revision,
+                            ),
+                        ).fetchone()
+                    else:
+                        candidate = db.execute(
+                            """SELECT c.*,r.run_id,r.aoi_id,r.aoi_revision,r.project_id,r.adapter_version,
+                                      r.status AS run_status
+                               FROM candidates c JOIN ingestion_runs r USING(run_id)
+                               WHERE c.source_id=? AND c.version_id=? AND c.promotion_status='promoted'
+                               ORDER BY c.created_at DESC LIMIT 1""",
+                            (source_id, active["version_id"]),
+                        ).fetchone()
 
                 version_id = active["version_id"] if active is not None else None
                 candidate_id = candidate["candidate_id"] if candidate is not None else None
@@ -1137,7 +1248,148 @@ class SQLiteSourceRepository:
             ).fetchall()
         return [self._snapshot_row(row) for row in rows]
 
-    def promote(self, candidate_id: str) -> dict[str, Any]:
+    def _persisted_aoi_geometry_hash(self, project_id: str, aoi_id: str, aoi_revision: int) -> str:
+        revision_path = (
+            self.data_root
+            / "workspace"
+            / "projects"
+            / project_id
+            / "aoi-revisions"
+            / f"{aoi_id}.json"
+        )
+        try:
+            revision = json.loads(revision_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("Persisted AOI revision is unavailable for promotion") from exc
+        try:
+            revision_number = int(revision.get("revision", -1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Persisted AOI revision number is invalid") from exc
+        if (
+            revision.get("project_id") != project_id
+            or revision.get("aoi_id") != aoi_id
+            or revision_number != aoi_revision
+        ):
+            raise ValueError("Persisted AOI revision identity does not match promotion request")
+        context = AoiContext.from_revision(revision)
+        if revision.get("geometry_sha256") != context.geometry_sha256:
+            raise ValueError("Persisted AOI geometry hash is inconsistent")
+        return context.geometry_sha256
+
+    @staticmethod
+    def _is_generic_raster_candidate(candidate: dict[str, Any]) -> bool:
+        return candidate["source_id"] in {"annual_nlcd", "3dep"} and bool(
+            (candidate.get("validation") or {})
+            .get("source_provenance", {})
+            .get("aoi_geometry_sha256")
+        )
+
+    @staticmethod
+    def _generic_raster_rejection(candidate: dict[str, Any]) -> str | None:
+        validation = candidate.get("validation") or {}
+        metrics = validation.get("metrics")
+        if not isinstance(metrics, dict):
+            return "AOI raster candidate is missing validated raster metrics"
+        coverage = metrics.get("coverage") or {}
+        pixels = metrics.get("pixel_accounting") or {}
+        if "uncovered_aoi_percentage" not in coverage:
+            return "AOI raster candidate is missing AOI coverage metrics"
+        try:
+            uncovered_percentage = float(coverage["uncovered_aoi_percentage"])
+            covered_percentage = float(coverage["covered_aoi_percentage"])
+        except (KeyError, TypeError, ValueError):
+            return "AOI raster candidate is missing complete AOI coverage metrics"
+        if (
+            not 0.0 <= uncovered_percentage <= 100.0
+            or not 0.0 <= covered_percentage <= 100.0
+            or uncovered_percentage > 0.0
+            or covered_percentage < 100.0
+        ):
+            return "AOI raster candidate has incomplete AOI footprint coverage"
+        try:
+            nodata_count = int(pixels.get("nodata_pixel_count", 0) or 0)
+            valid_count = int(pixels.get("valid_pixel_count", 0) or 0)
+        except (TypeError, ValueError):
+            return "AOI raster candidate has invalid pixel accounting"
+        if nodata_count > 0:
+            return "AOI raster candidate contains nodata inside the AOI"
+        if valid_count <= 0:
+            return "AOI raster candidate contains no valid AOI observations"
+        if candidate["source_id"] == "annual_nlcd":
+            if metrics.get("crs") != NLCD_NATIVE_CRS:
+                return f"NLCD raster CRS is not {NLCD_NATIVE_CRS}"
+            try:
+                nlcd_nodata = int(metrics.get("nodata", -1))
+            except (TypeError, ValueError):
+                return "NLCD raster nodata is invalid"
+            if nlcd_nodata != NLCD_NATIVE_NODATA:
+                return "NLCD raster nodata does not match the native product contract"
+            resolution = metrics.get("resolution_m") or []
+            try:
+                valid_resolution = len(resolution) == 2 and all(
+                    math.isclose(float(value), NLCD_NATIVE_RESOLUTION_M, rel_tol=0.01)
+                    for value in resolution
+                )
+            except (TypeError, ValueError):
+                valid_resolution = False
+            if not valid_resolution:
+                return "NLCD raster resolution is outside the native 30 m contract"
+            if metrics.get("dtype") != "uint8" or not isinstance(metrics.get("transform"), list):
+                return "NLCD raster metadata does not satisfy the validated schema"
+            try:
+                invalid_classes = set(metrics.get("observed_class_values", [])) - set(NLCD_CLASSES)
+            except TypeError:
+                return "NLCD raster observed class values are invalid"
+            if invalid_classes:
+                return f"NLCD raster contains values outside the official class domain: {sorted(invalid_classes)}"
+        else:
+            if metrics.get("source_crs") != THREEDEP_NATIVE_CRS:
+                return f"3DEP raster CRS is not {THREEDEP_NATIVE_CRS}"
+            try:
+                elevation_nodata = float(metrics.get("nodata", 0))
+            except (TypeError, ValueError):
+                return "3DEP raster nodata is invalid"
+            if elevation_nodata != float(THREEDEP_NODATA):
+                return "3DEP raster nodata does not match the native product contract"
+            resolution = metrics.get("resolution_arc_seconds") or []
+            try:
+                valid_resolution = len(resolution) == 2 and all(
+                    math.isclose(float(value), THREEDEP_NOMINAL_ARC_SECONDS, rel_tol=0.001)
+                    for value in resolution
+                )
+            except (TypeError, ValueError):
+                valid_resolution = False
+            if not valid_resolution:
+                return "3DEP raster resolution is outside the native 1/3 arc-second contract"
+            if metrics.get("dtype") not in {"int16", "float32", "float64"} or not isinstance(
+                metrics.get("transform"), list
+            ):
+                return "3DEP raster metadata does not satisfy the validated schema"
+            if not isinstance(metrics.get("elevation_m"), dict):
+                return "3DEP raster is missing validated elevation metrics"
+        dimensions = metrics.get("dimensions")
+        if candidate["source_id"] == "annual_nlcd":
+            dimensions = {"width": metrics.get("width"), "height": metrics.get("height")}
+        try:
+            valid_dimensions = (
+                isinstance(dimensions, dict)
+                and int(dimensions.get("width", 0)) > 0
+                and int(dimensions.get("height", 0)) > 0
+            )
+        except (TypeError, ValueError):
+            valid_dimensions = False
+        if not valid_dimensions:
+            return "AOI raster dimensions are missing or invalid"
+        return None
+
+    def promote(
+        self,
+        candidate_id: str,
+        *,
+        project_id: str | None = None,
+        aoi_id: str | None = None,
+        aoi_revision: int | None = None,
+    ) -> dict[str, Any]:
         with self._database() as db:
             db.execute("BEGIN IMMEDIATE")
             try:
@@ -1147,25 +1399,93 @@ class SQLiteSourceRepository:
                 if prior_decision is not None:
                     result = dict(prior_decision)
                     result["idempotent"] = True
+                    if result.get("project_id") is not None:
+                        result["aoi_scope"] = {
+                            "project_id": result["project_id"],
+                            "aoi_id": result["aoi_id"],
+                            "aoi_revision": result["aoi_revision"],
+                            "aoi_geometry_sha256": result["aoi_geometry_sha256"],
+                        }
                     db.commit()
                     return result
 
                 candidate = self._candidate(candidate_id, db)
                 if candidate is None:
                     raise KeyError(f"Unknown candidate: {candidate_id}")
-                current = db.execute(
-                    "SELECT version_id FROM active_versions WHERE source_id=?",
-                    (candidate["source_id"],),
-                ).fetchone()
-                previous_version_id = current["version_id"] if current else None
+                generic_candidate = self._is_generic_raster_candidate(candidate)
+                aoi_scope: dict[str, Any] | None = None
                 rejection: str | None = None
+                if generic_candidate:
+                    if not all(value is not None for value in (project_id, aoi_id, aoi_revision)):
+                        rejection = (
+                            "AOI-scoped NLCD/3DEP promotion requires project_id, aoi_id, "
+                            "and aoi_revision"
+                        )
+                    else:
+                        assert (
+                            project_id is not None
+                            and aoi_id is not None
+                            and aoi_revision is not None
+                        )
+                        try:
+                            persisted_hash = self._persisted_aoi_geometry_hash(
+                                str(project_id), str(aoi_id), int(aoi_revision)
+                            )
+                        except ValueError as exc:
+                            rejection = str(exc)
+                        else:
+                            provenance = (candidate.get("validation") or {}).get(
+                                "source_provenance", {}
+                            )
+                            if (
+                                candidate.get("project_id") != project_id
+                                or candidate.get("aoi_id") != aoi_id
+                                or int(candidate.get("aoi_revision", -1)) != int(aoi_revision)
+                            ):
+                                rejection = "Candidate ingestion run does not match the requested AOI lineage"
+                            elif provenance.get("aoi_id") != aoi_id or int(
+                                provenance.get("aoi_revision", -1)
+                            ) != int(aoi_revision):
+                                rejection = (
+                                    "Candidate provenance does not match the requested AOI revision"
+                                )
+                            elif provenance.get("aoi_geometry_sha256") != persisted_hash:
+                                rejection = "Candidate geometry hash does not match the persisted AOI revision"
+                            else:
+                                aoi_scope = {
+                                    "project_id": str(project_id),
+                                    "aoi_id": str(aoi_id),
+                                    "aoi_revision": int(aoi_revision),
+                                    "aoi_geometry_sha256": persisted_hash,
+                                }
+                    if aoi_scope is not None:
+                        current = db.execute(
+                            """SELECT version_id,candidate_id FROM active_aoi_versions
+                               WHERE source_id=? AND project_id=? AND aoi_id=? AND aoi_revision=?""",
+                            (
+                                candidate["source_id"],
+                                aoi_scope["project_id"],
+                                aoi_scope["aoi_id"],
+                                aoi_scope["aoi_revision"],
+                            ),
+                        ).fetchone()
+                    else:
+                        current = None
+                else:
+                    current = db.execute(
+                        "SELECT version_id FROM active_versions WHERE source_id=?",
+                        (candidate["source_id"],),
+                    ).fetchone()
+                previous_version_id = current["version_id"] if current else None
                 regional_coverage = candidate["validation"].get("regional_coverage_validation")
                 preserve_inactive_disposition = (
                     candidate["source_id"] == "ssurgo"
                     and regional_coverage is not None
                     and candidate["promotion_status"] == "not_promoted"
                 )
-                if preserve_inactive_disposition:
+                if rejection is not None:
+                    pass
+                elif preserve_inactive_disposition:
                     coverage = regional_coverage.get("coverage", {})
                     rejection = (
                         "SSURGO regional candidate rejected for promotion: "
@@ -1198,6 +1518,28 @@ class SQLiteSourceRepository:
                     rejection = f"Candidate observation is not promotable: {candidate['observation_status']}"
                 elif int(candidate["validation"].get("quarantined_count", 0)) > 0:
                     rejection = "Candidate validation reports quarantined geometry"
+                elif generic_candidate:
+                    rejection = self._generic_raster_rejection(candidate)
+
+                if rejection is None:
+                    version = (
+                        db.execute(
+                            "SELECT source_id,sha256,byte_size,artifact_path FROM source_versions WHERE version_id=?",
+                            (candidate["version_id"],),
+                        ).fetchone()
+                        if candidate["version_id"]
+                        else None
+                    )
+                    if version is None:
+                        rejection = "Candidate source-version record is missing"
+                    elif (
+                        version["source_id"] != candidate["source_id"]
+                        or version["sha256"] != candidate["sha256"]
+                        or int(version["byte_size"]) != int(candidate["byte_size"])
+                        or Path(version["artifact_path"]).resolve()
+                        != Path(candidate["artifact_path"]).resolve()
+                    ):
+                        rejection = "Candidate/source-version lineage or checksum metadata mismatch"
 
                 if rejection is None:
                     artifact = Path(candidate["artifact_path"]).resolve()
@@ -1223,14 +1565,19 @@ class SQLiteSourceRepository:
                 decision_id = str(uuid4())
                 db.execute(
                     """INSERT INTO promotion_decisions
-                    (decision_id,candidate_id,source_id,version_id,previous_version_id,decision,reason,decided_at)
-                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (decision_id,candidate_id,source_id,version_id,previous_version_id,
+                     project_id,aoi_id,aoi_revision,aoi_geometry_sha256,decision,reason,decided_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         decision_id,
                         candidate_id,
                         candidate["source_id"],
                         candidate["version_id"],
                         previous_version_id,
+                        aoi_scope["project_id"] if aoi_scope else None,
+                        aoi_scope["aoi_id"] if aoi_scope else None,
+                        aoi_scope["aoi_revision"] if aoi_scope else None,
+                        aoi_scope["aoi_geometry_sha256"] if aoi_scope else None,
                         decision,
                         reason,
                         now,
@@ -1248,10 +1595,16 @@ class SQLiteSourceRepository:
                             "UPDATE source_versions SET promotion_status='superseded' WHERE version_id=?",
                             (previous_version_id,),
                         )
-                        db.execute(
-                            "UPDATE candidates SET promotion_status='superseded' WHERE version_id=? AND promotion_status='promoted'",
-                            (previous_version_id,),
-                        )
+                        if generic_candidate and current is not None:
+                            db.execute(
+                                "UPDATE candidates SET promotion_status='superseded' WHERE candidate_id=?",
+                                (current["candidate_id"],),
+                            )
+                        else:
+                            db.execute(
+                                "UPDATE candidates SET promotion_status='superseded' WHERE version_id=? AND promotion_status='promoted'",
+                                (previous_version_id,),
+                            )
                     db.execute(
                         "UPDATE source_versions SET promotion_status='active' WHERE version_id=?",
                         (candidate["version_id"],),
@@ -1260,7 +1613,31 @@ class SQLiteSourceRepository:
                         "UPDATE candidates SET promotion_status='promoted' WHERE candidate_id=?",
                         (candidate_id,),
                     )
-                    if not already_active:
+                    if generic_candidate:
+                        if aoi_scope is None:
+                            raise RuntimeError("AOI-scoped promotion has no validated AOI scope")
+                        db.execute(
+                            """INSERT INTO active_aoi_versions
+                               (source_id,project_id,aoi_id,aoi_revision,aoi_geometry_sha256,
+                                version_id,candidate_id,promoted_at)
+                               VALUES (?,?,?,?,?,?,?,?)
+                               ON CONFLICT(source_id,project_id,aoi_id,aoi_revision) DO UPDATE SET
+                                  aoi_geometry_sha256=excluded.aoi_geometry_sha256,
+                                  version_id=excluded.version_id,
+                                  candidate_id=excluded.candidate_id,
+                                  promoted_at=excluded.promoted_at""",
+                            (
+                                candidate["source_id"],
+                                aoi_scope["project_id"],
+                                aoi_scope["aoi_id"],
+                                aoi_scope["aoi_revision"],
+                                aoi_scope["aoi_geometry_sha256"],
+                                candidate["version_id"],
+                                candidate_id,
+                                now,
+                            ),
+                        )
+                    elif not already_active:
                         db.execute(
                             """INSERT INTO active_versions(source_id,version_id,promoted_at)
                                VALUES(?,?,?) ON CONFLICT(source_id) DO UPDATE SET
@@ -1278,6 +1655,7 @@ class SQLiteSourceRepository:
                     "reason": reason,
                     "decided_at": now,
                     "idempotent": False,
+                    "aoi_scope": aoi_scope,
                 }
             except Exception:
                 db.rollback()

@@ -657,6 +657,7 @@ def create_job(
     }
     snapshots = SQLiteSourceRepository(data_root).create_job_snapshots(
         job_id=job_id,
+        project_id=project_id,
         aoi_id=selected_aoi,
         aoi_revision=int(revision["revision"]),
         source_ids=selected_sources,

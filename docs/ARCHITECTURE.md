@@ -193,6 +193,17 @@ PostGIS is a core architectural boundary, not a résumé-only dependency. The im
 
 The local catalog implements candidate-first acquisition metadata for Census, NLCD, 3DEP and SSURGO. The acquisition callback durably creates an `incomplete` candidate and checksum/release version before parsing; adapter validation finalizes that candidate as validated, failed, or incomplete. Each run, acquisition attempt, candidate validation and immutable `(source, release, SHA-256)` version is queryable; PAD-US quarantine and FEMA blocked outcomes are recorded without acquisition or promotion. Explicit promotion verifies candidate/run/validation/coverage/quarantine states and re-hashes the external artifact inside a SQLite `BEGIN IMMEDIATE` transaction before advancing the active-version pointer. Failed, partial, quarantined or blocked candidates cannot activate; version bytes and metadata are retained when a later version is promoted. Repeating a decision for the same candidate is idempotent.
 
+Generic Annual NLCD and 3DEP candidates use the same catalog and promotion
+transaction, but their active pointer is AOI-scoped. Promotion requires the
+persisted project, immutable AOI revision, exact geometry hash, acquisition
+run, source version, artifact checksum/size, complete AOI footprint, native
+raster metadata, and an eligible observed validation state. The catalog stores
+these pointers in `active_aoi_versions`; a pointer for one AOI revision cannot
+serve another revision, and a failed replacement leaves the prior pointer
+unchanged. Candidate failures remain queryable with an auditable rejection
+decision. The legacy `active_versions` pointer remains for existing unscoped
+fixture behavior. SSURGO, PAD-US, and FEMA are not enabled by this slice.
+
 When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 
 ## Processing pipelines

@@ -27,6 +27,19 @@ The 2026-09-25 live generic-AOI smoke passed for both paths using a dedicated Wa
 
 ## Milestone 1 — Geography and source feasibility
 
+## Milestone 2B.18 — AOI-scoped generic raster candidate promotion
+
+**Status:** Implemented. Generic Annual NLCD and 3DEP candidates use the
+existing SQLite catalog and can activate only for the exact project/AOI
+revision that acquired them. Promotion is checksum- and geometry-hash-
+protected, validates complete AOI coverage and native raster metadata, writes
+an auditable decision, and preserves the previous AOI pointer on failure.
+
+**Remaining boundary:** SSURGO, PAD-US, and FEMA remain unpromoted; source
+maturity is unchanged. The next work should address the hosted/production
+repository boundary or another explicitly selected AOI-agnostic ETL slice,
+not infer regional production readiness from these local pointers.
+
 **Priority:** P0 — prerequisite
 
 **Status:** The England recommendation and NWI MVP source are superseded. Owner selected Northern Colorado (Boulder, Larimer, Weld; approx. 7,391 sq mi) and the five-source direction: FEMA NFHL, PAD-US 4.1, Annual NLCD Collection 1.2 (2025), 3DEP 1/3 arc-second, and SSURGO hydric-soil information. Exact TIGER/Line 2025 county geometries pass validation and retain all three union components. NLCD, one 3DEP tile, and SSURGO SDA samples passed representative checks and their initial small-window adapters have passed live smoke tests. The owner-approved PAD-US repair policy has been applied to a five-feature sample: two unchanged features accepted, three repaired candidates quarantined. Complete Colorado package access is blocked by official ScienceBase HTTP 403 responses; no regional QA or gap estimate exists. FEMA official service/download access remains independently blocked. Milestone 1 final source approval remains open. Milestone 2A was explicitly authorized; Milestone 2B has a local prototype but makes no full source-coverage claims.
