@@ -11,6 +11,20 @@ Verified on 2026-09-25 after runtime verification of the Milestone 2B.4 AOI boun
 - Raw source responses and local workspace/project/job/export records are written under an external `--data-dir`; the CLI rejects a data directory within this repository. Raw artifacts are not Git inputs.
 - Toolkit was inspected as an optional reference only. No toolkit import, dependency, symlink, submodule, or modification exists.
 
+## Read-only operations console
+
+Verified on 2026-09-26. `frontend/` contains a dependency-free static
+operations console that consumes the existing `report-aoi-run` JSON shape. A
+checked-in `frontend/public/demo/report.json` records the retained Washington,
+DC smoke scenario: active NLCD and 3DEP screening evidence plus an incomplete,
+inactive SSURGO package path with retry history. The console exposes project/AOI
+identity, geometry hash, plans, attempts, checksums, validation, promotion,
+active versions, immutable snapshots, source metrics, and explicit warning /
+unknown / incomplete states. `npm test` and `npm run build` are the local
+frontend checks; serving `frontend/dist` is a static preview only. No backend,
+provider access, PostGIS connection, raw artifact, authentication, worker,
+live map, or new screening behavior was added.
+
 ## Implemented Milestone 2B slice
 
 | Area | Verified behavior | Boundary / not yet implemented |

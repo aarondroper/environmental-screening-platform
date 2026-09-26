@@ -156,6 +156,22 @@ terminal view. The report is read-only, works for generic AOIs, performs no
 provider access, and keeps unknown/unavailable/incomplete/nodata/quarantined
 states distinct from no constraint observed.
 
+For a static operations-console demonstration of that report, build and serve
+the dependency-free frontend:
+
+```bash
+cd frontend
+npm test
+npm run build
+python3 -m http.server 8080 --directory dist
+```
+
+Open <http://localhost:8080/>. The console reads the checked-in
+`frontend/public/demo/report.json`, a recorded Washington, DC smoke result. It
+is a read-only projection of the `report-aoi-run` JSON shape: it performs no
+provider access, does not require the Python backend, PostGIS, or raw source
+downloads, and does not add screening behavior or conclusions.
+
 The SSURGO command creates a single-source `ssurgo_fixture_only` job. It reports exact snapshot/version provenance, fixture-only status, covered/uncovered AOI area, map-unit/component metrics, and hydric-soil attributes. It never selects latest data or claims regional SSURGO coverage. Sources without an active version, including PAD-US and FEMA in the current state, remain explicit unknown, quarantined, or unavailable outcomes. To use newly promoted data, create a new screening job; retry reuses the original snapshot. Active regional canonical environmental layers and regional tiling are not implemented.
 
 Source ingestion is separately available as a candidate-first operator workflow. For example:
@@ -248,4 +264,4 @@ The exports are a JSON source/result record, CSV with one row per source and pro
 
 ## Current limits
 
-There is no deployed database, HTTP API, asynchronous queue, frontend, deployment, or CI workflow yet. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation, bounded generic NLCD acquisition, bounded 3DEP tile planning/acquisition, and bounded generic SSURGO package acquisition are implemented. Generic SSURGO staging, mosaicking, regional coverage analysis for arbitrary AOIs, and production coverage remain future work. The live generic SSURGO smoke acquired one official DC001 package outside Northern Colorado on 2026-09-25; the result is validation-only evidence, not final source approval or production readiness. The 19 Northern Colorado package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.
+There is no deployed database, HTTP API, asynchronous queue, deployment, or CI workflow yet. A dependency-free static operations console now projects one checked-in `report-aoi-run` demonstration; it is not a live frontend and does not replace the future API/worker surface. PostGIS is an optional local repository boundary with a validated Census regression AOI, representative fixture-only SSURGO tables, and derived regional SSURGO staging; NLCD and 3DEP fixture screening retain rasters externally and do not add pixel tables. Docker/psycopg availability is environment-dependent. Generic AOI creation, bounded generic NLCD acquisition, bounded 3DEP tile planning/acquisition, and bounded generic SSURGO package acquisition are implemented. Generic SSURGO staging, mosaicking, regional coverage analysis for arbitrary AOIs, and production coverage remain future work. The live generic SSURGO smoke acquired one official DC001 package outside Northern Colorado on 2026-09-25; the result is validation-only evidence, not final source approval or production readiness. The 19 Northern Colorado package candidates and one derived regional candidate remain inactive; no active SSURGO version was created. Follow `docs/BACKLOG.md` for the next objective and `AGENTS.md` for project operating rules.

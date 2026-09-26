@@ -225,6 +225,16 @@ section; it never writes a report record, refreshes an active pointer, or
 collapses unknown, unavailable, incomplete, nodata, pending, quarantined, or
 rejected states into success or absence.
 
+The operations console is a separate static read model over this report
+contract. `frontend/src/main.mjs` loads a checked-in/generated
+`report-aoi-run` JSON document and `frontend/src/app.mjs` renders the AOI
+identity, deterministic plan, source lifecycle matrix, provenance, metrics,
+and guardrails without acquiring data or connecting to SQLite, PostGIS, or an
+API. The checked-in Washington, DC document is explicitly a recorded
+demonstration result. The console is intentionally not a generic dashboard,
+map, source adapter, worker, or screening implementation; future live wiring
+must preserve the report's independent unknown/incomplete/unavailable states.
+
 When a screening job is created, the catalog resolves every requested source against the active pointer and writes an immutable `job_source_snapshots` row before processing. Each row records the job/AOI revision, source version when available, candidate/run lineage, maturity, coverage, observation, snapshot status, reason, and provenance. The worker reads that snapshot only: it does not acquire a newer candidate or re-resolve the active pointer. A missing or checksum-invalid artifact becomes unavailable for that execution without mutating the historical snapshot. Retry reuses the same rows; a new `create_job` call is the explicit fresh-snapshot operation. This does not load canonical geometry/raster data into PostGIS.
 
 ## Processing pipelines

@@ -59,6 +59,21 @@ immutable project/AOI revision into JSON or a concise terminal summary.
 promote, screen, alter source maturity, or replace a future API/operations
 surface.
 
+## Milestone 2B.21 — Static read-only operations console
+
+**Status:** Implemented. A dependency-free static console under `frontend/`
+consumes the deterministic `report-aoi-run` JSON read model and includes a
+checked-in recorded Washington, DC demonstration report. It shows AOI
+identity, deterministic plans, source lifecycle, attempts/retries, artifacts,
+checksums, validation, candidates, promotions, active versions, immutable
+snapshots, independent metrics, and explicit warning/incomplete/unknown states.
+
+**Explicit limits:** The console is not a live dashboard, API, map, worker, or
+provider client. It does not require PostGIS or raw artifacts, does not alter
+the Python CLI/catalog/source adapters, and does not produce rankings,
+composite scores, safety conclusions, or regulatory determinations. Future
+live wiring remains a separate product/architecture decision.
+
 ## Milestone 1 — Geography and source feasibility
 
 **Priority:** P0 — prerequisite
