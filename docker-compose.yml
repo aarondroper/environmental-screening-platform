@@ -1,0 +1,59 @@
+# Local development stack. `docker compose up --build` then open http://localhost:8080
+# Defaults are development-only credentials; override via a .env file.
+name: esp
+
+x-backend: &backend
+  build: ./backend
+  environment:
+    ESP_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-esp}:${POSTGRES_PASSWORD:-esp}@db:5432/${POSTGRES_DB:-esp}
+    ESP_LOG_LEVEL: ${ESP_LOG_LEVEL:-INFO}
+
+services:
+  db:
+    # Multi-arch (amd64 + arm64) PostGIS build by the docker-postgis maintainer;
+    # the official postgis/postgis image is amd64-only.
+    image: imresamu/postgis:17-3.6
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-esp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-esp}
+      POSTGRES_DB: ${POSTGRES_DB:-esp}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: ./frontend
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  db-data:

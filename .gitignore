@@ -1,14 +1,17 @@
+# Python
 .venv/
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-*.py[cod]
-*.egg-info/
-/runtime-data/
+
+# Node
+node_modules/
+dist/
+
+# Local environment
 .env
-frontend/dist/
-frontend/node_modules/
 
 # Local design references (not committed)
 /references/

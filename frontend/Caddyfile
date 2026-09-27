@@ -1,0 +1,20 @@
+# SITE_ADDRESS is ":80" locally; in production set it to the public hostname
+# and Caddy provisions TLS automatically.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

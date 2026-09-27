@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      db:
+        image: imresamu/postgis:17-3.6
+        env:
+          POSTGRES_USER: esp
+          POSTGRES_PASSWORD: esp
+          POSTGRES_DB: esp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U esp" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      ESP_TEST_DATABASE_URL: postgresql+psycopg://esp:esp@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  compose-smoke:
+    # Builds every image and checks the stack comes up healthy end to end.
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker compose up --build --detach
+      - name: Health through the web proxy
+        run: |
+          for i in $(seq 60); do
+            curl --fail --silent http://localhost:8080/api/health > health.json && break
+            sleep 3
+          done
+          cat health.json
+          jq -e '.status == "ok" and .database == "ok"' health.json
+      - name: Frontend is served
+        run: curl --fail --silent http://localhost:8080/ | grep -q '<div id="root">'
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down --volumes
