@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 
 import httpx
 from sqlalchemy.orm import sessionmaker
@@ -11,7 +12,7 @@ from esp.config import get_settings
 from esp.db import get_engine
 from esp.ingest import ingest_ssurgo
 from esp.logging import configure_logging
-from esp.sources.ssurgo import WebSoilSurvey
+from esp.sources.ssurgo import LocalPackageDir, WebSoilSurvey
 
 USER_AGENT = "environmental-screening-platform (+https://github.com/aarondroper/environmental-screening-platform)"
 
@@ -23,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
     sources = ingest.add_subparsers(dest="dataset", required=True)
     ssurgo = sources.add_parser("ssurgo", help="NRCS SSURGO survey-area packages")
     ssurgo.add_argument("--areas", nargs="+", required=True, help="Survey area symbols, e.g. CO644")
+    ssurgo.add_argument(
+        "--package-dir",
+        type=Path,
+        help="Load <DIR>/<AREA>.zip packages from disk instead of Web Soil Survey",
+    )
     ssurgo.add_argument(
         "--no-promote", action="store_true", help="Validate only; leave the active version"
     )
@@ -36,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     ) as client:
         outcome = ingest_ssurgo(
             sessions,
-            WebSoilSurvey(client),
+            LocalPackageDir(args.package_dir) if args.package_dir else WebSoilSurvey(client),
             args.areas,
             settings.raw_dir,
             promote=not args.no_promote,

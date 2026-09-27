@@ -46,3 +46,19 @@ the docker-postgis maintainer; the official `postgis/postgis` image is amd64-onl
 not run on the ARM VM.
 
 **D10 — Basemap: OpenFreeMap (development).** Free vector tiles, no API key.
+
+**D11 — Interim region check and AOI limit (development, 2026-09-27).** AOIs must fall inside
+Colorado's TIGER 2025 bounding box (the state's borders follow lines of latitude/longitude)
+until the TIGER boundary is loaded as data; AOIs are limited to 250 km² for the public demo.
+A 250 km² screening against real SSURGO data takes ~0.1 s, so the limit is about the
+public demo's load, not performance.
+
+**D12 — SSURGO hydric classes (development, within D5).** Map units are grouped by
+`muaggatt.hydclprs` into the five classes NRCS Web Soil Survey uses for "Hydric Rating by
+Map Unit" (100%, 66–99%, 33–65%, 1–32%, <1%) plus "Not rated"; no new thresholds.
+
+**D13 — Validation gates are data-quality limits, not screening thresholds (development).**
+E.g. ≤1% of source polygons repaired, polygon area within 1% of the survey-area boundary,
+no more than a 10% feature drop versus the active version. A failing version is kept as
+`failed` with its report; the active version is untouched.
+

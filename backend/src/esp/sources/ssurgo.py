@@ -6,8 +6,10 @@ shapefiles (`spatial/`) and headerless pipe-delimited tables (`tabular/`).
 """
 
 import csv
+import hashlib
 import io
 import logging
+import shutil
 import uuid
 import zipfile
 from collections.abc import Iterator
@@ -90,6 +92,34 @@ class WebSoilSurvey:
         if not zipfile.is_zipfile(dest):
             raise ValueError(f"{url} did not return a ZIP archive")
         return url, dest
+
+
+class LocalPackageDir:
+    """Packages already on disk as `<dir>/<AREA>.zip` (offline loads, CI smoke tests).
+
+    The release identifier is derived from the file content, so re-running with the same
+    files is detected as unchanged.
+    """
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+
+    def releases(self, areas: list[str]) -> dict[str, str]:
+        return {area: f"local-{_sha256(self.directory / f'{area}.zip')[:12]}" for area in areas}
+
+    def download(self, area: str, release: str, dest_dir: Path) -> tuple[str, Path]:
+        source = self.directory / f"{area}.zip"
+        dest = dest_dir / source.name
+        shutil.copyfile(source, dest)
+        return source.resolve().as_uri(), dest
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # --- Parsing --------------------------------------------------------------------------

@@ -14,15 +14,20 @@ The engineering system is the product; screening analysis stays simple and trans
 ## Layout
 - `backend/` — Python package `esp` (`src/esp/`), Alembic migrations, pytest suite.
 - `frontend/` — Vite + React + TypeScript + MapLibre; Caddy serves the build and proxies `/api`.
-- `docker-compose.yml` — db (PostGIS), migrate (one-shot), api, web.
+- `docker-compose.yml` — db (PostGIS), migrate (one-shot), api, worker, web.
+- `scripts/smoke.sh` — end-to-end check against a running stack (used by CI).
 
 ## Commands
 ```bash
 docker compose up --build            # full stack → http://localhost:8090 (API docs: /api/docs)
 docker compose up -d db              # just PostGIS for backend tests (port 5432, esp/esp)
+docker compose run --rm api esp ingest ssurgo --areas CO644   # live ingest (US network only for some sources)
+scripts/smoke.sh                     # e2e against a *fresh* stack; to keep local data use e.g.
+                                     # COMPOSE_PROJECT_NAME=esp-smoke WEB_PORT=8091 DB_PORT=5433
 
 cd backend
 uv sync                              # install (uv manages .venv and uv.lock)
+uv run python -m esp.worker          # worker outside docker (uvicorn esp.api.main:app for the API)
 uv run pytest                        # needs PostGIS; ESP_TEST_DATABASE_URL overrides the admin URL
 uv run ruff check . && uv run ruff format --check . && uv run mypy
 uv run alembic revision -m "..."     # new migration (hand-write it; review any autogenerate)

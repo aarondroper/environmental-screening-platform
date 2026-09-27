@@ -12,10 +12,14 @@ determinations.
 
 ## Status
 
-**Phase 0 (foundation).** The Compose stack (PostGIS, migrations, FastAPI, Caddy + React/MapLibre)
-starts from a fresh clone, and CI runs lint, type checks, tests against PostGIS, and a
-compose smoke test. Ingestion, versioned datasets, and screening jobs come next. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for what exists and what is planned.
+**Walking skeleton complete, with one dataset end to end.** NRCS SSURGO survey-area
+packages are acquired, stored as checksummed raw snapshots, validated, and promoted as a
+versioned PostGIS dataset. A user draws or uploads an AOI; an asynchronous worker screens it
+against the pinned dataset version; the web app shows per-class hydric-soil metrics and the
+clipped soil map units on a MapLibre map. CI runs lint, type checks, tests against PostGIS,
+and an end-to-end smoke test of the whole Compose stack. The remaining four datasets,
+statewide coverage, exports, and deployment are next; see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Quick start
 
@@ -28,6 +32,13 @@ docker compose up --build
 - App: http://localhost:8090
 - API docs: http://localhost:8090/api/docs
 - Health: http://localhost:8090/api/health
+
+Load data (a live download from USDA; ~45 s for Larimer County Area), then screen an AOI in
+the app:
+
+```bash
+docker compose run --rm api esp ingest ssurgo --areas CO644
+```
 
 Development commands (backend with `uv`, frontend with `npm`) are in [CLAUDE.md](CLAUDE.md).
 
