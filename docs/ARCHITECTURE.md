@@ -277,6 +277,14 @@ bounds, and the browser pixel indexer uses its width/height and bounds rather
 than the native transform. This prevents a projected source rectangle from
 being treated as a geographic image rectangle.
 
+The identify interaction is bound to the real Leaflet map immediately after
+map creation and also forwards clicks from the AOI boundary layer; the
+non-interactive raster overlay does not own pointer events. Results are written
+to a persistent in-map panel with explicit loading, observed, outside-AOI,
+outside-preview, nodata, and unavailable states. Outside-AOI membership is
+checked before raster bounds, so missing coverage is never presented as an
+absence observation.
+
 The bridge response contract is source-keyed: a successful Annual NLCD result
 is exposed as `browser_previews.annual_nlcd`, with job-scoped metadata and asset
 URLs. The preview generator creates one derivative object, and the bridge

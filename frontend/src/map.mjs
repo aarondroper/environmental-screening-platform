@@ -1,6 +1,7 @@
 import L from "leaflet";
 import { parseAoiGeometry } from "./aoi-geometry.mjs";
 import { identifyNlcdPixel } from "./nlcd-identify.mjs";
+import { bindMapIdentify, updateIdentifyTarget } from "./map-identify-controller.mjs";
 
 const setMapState = (element, state, message) => {
   const status = element.querySelector("[data-map-status]");
@@ -55,10 +56,7 @@ const setPreviewState = (element, key, state, message) => {
 
 const setIdentifyMessage = (element, result) => {
   const target = element.closest(".workspace-map-stage")?.querySelector("[data-nlcd-identify]");
-  if (!target) return;
-  target.textContent = result.message;
-  target.dataset.identifyState = result.status;
-  target.className = `map-identify map-identify-${result.status}`;
+  updateIdentifyTarget(target, result);
 };
 
 const createNlcdIdentifyHandler = (element, overlay, metadata, aoi) => {
@@ -190,18 +188,22 @@ export const mountAoiMap = (element, aoi, previews = {}) => {
   }).addTo(map);
   const layer = L.geoJSON(feature, {
     style: { color: "#075f52", weight: 3, opacity: 1, fillColor: "#58aa96", fillOpacity: 0.36 },
+    bubblingMouseEvents: false,
   }).addTo(map);
   fitMapToAoi(map, layer);
   let nlcdIdentifyHandler = null;
-  map.on("click", (event) => {
-    if (nlcdIdentifyHandler) {
-      nlcdIdentifyHandler(event);
-      return;
-    }
+  const fallbackIdentify = () => {
     setIdentifyMessage(element, previews.annual_nlcd?.status === "available"
       ? { status: "loading", message: "NLCD identify is still loading. Try the map again shortly." }
       : { status: "unavailable", message: "NLCD identify unavailable: no AOI-specific preview is attached." });
-  });
+  };
+  const handleMapClick = (event) => {
+    const handler = nlcdIdentifyHandler;
+    if (handler) handler(event);
+    else fallbackIdentify(event);
+  };
+  bindMapIdentify(map, () => nlcdIdentifyHandler, fallbackIdentify);
+  layer.on("click", handleMapClick);
   mountRasterPreview(element, map, layer, aoi, previews["3dep"], "3dep", "3DEP terrain", 200);
   mountRasterPreview(
     element,

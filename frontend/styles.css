@@ -210,6 +210,7 @@ footer a { color: var(--accent); font-weight: 700; }
 .workspace-layer-note { margin: 8px 2px 0; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: .65rem; line-height: 1.35; }
 .map-caption { padding: 7px 11px; margin: 0; border-top: 1px solid var(--line); font-size: .65rem; }
 .map-caption code { max-width: 43%; text-align: right; }
+.map-identify-panel { position: absolute; z-index: 800; left: 12px; bottom: 12px; max-width: min(360px, calc(100% - 24px)); margin: 0; padding: 8px 10px; border: 1px solid rgb(216 224 221 / 95%); border-radius: 7px; background: rgb(255 255 255 / 94%); box-shadow: 0 3px 12px rgb(25 50 45 / 18%); line-height: 1.35; pointer-events: none; }
 .workspace-sidebar { display: flex; flex-direction: column; overflow: hidden; }
 .workspace-sidebar-head { flex: 0 0 auto; display: flex; align-items: end; justify-content: space-between; gap: 10px; padding: 13px 15px 10px; border-bottom: 1px solid var(--line); }
 .workspace-sidebar-head .eyebrow { margin-bottom: 3px; }
@@ -272,6 +273,7 @@ footer a { color: var(--accent); font-weight: 700; }
   .workspace-map-toolbar { align-items: start; flex-direction: column; padding: 9px 10px; }
   .workspace-map-status { align-self: flex-end; }
   .workspace-layer-control { top: 8px; left: 8px; width: min(250px, calc(100% - 16px)); }
+  .map-identify-panel { left: 8px; bottom: 8px; max-width: calc(100% - 16px); }
   .map-caption { align-items: start; flex-direction: column; gap: 4px; }
   .map-caption code { max-width: 100%; text-align: left; }
   .workspace-footer { align-items: start; flex-direction: column; padding: 5px 12px 9px; gap: 4px; }
@@ -446,8 +448,9 @@ footer a { color: var(--accent); font-weight: 700; }
 .nlcd-class-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .nlcd-class-value { color: var(--muted); font-size: .58rem; white-space: nowrap; }
 .map-identify { display: block; margin-top: 4px; color: var(--muted); font-size: .62rem; }
+.map-identify-panel.map-identify { margin: 0; font-size: .68rem; }
 .map-identify-observed { color: var(--accent); font-weight: 700; }
-.map-identify-nodata, .map-identify-outside_coverage, .map-identify-outside_aoi, .map-identify-unavailable { color: #8b5c19; }
+.map-identify-nodata, .map-identify-no_observation, .map-identify-outside_coverage, .map-identify-outside_aoi, .map-identify-unavailable { color: #8b5c19; }
 .workspace-secondary-sources { margin-top: 8px; border-top: 1px solid var(--line); }
 .workspace-secondary-sources > summary { padding: 8px 2px; color: var(--ink); font-size: .68rem; font-weight: 750; cursor: pointer; }
 .workspace-secondary-sources > summary span { color: var(--muted); font-weight: 500; }

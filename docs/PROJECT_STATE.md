@@ -80,6 +80,15 @@ so deterministic fixture coverage verifies the explicit nodata message.
 Map clicks now always have a visible loading, unavailable, class, outside-AOI,
 or nodata outcome instead of silently doing nothing.
 
+The 2026-09-27 click-path repair makes the map listener unconditional after
+Leaflet map creation, forwards clicks from the AOI boundary layer explicitly,
+keeps the NLCD image overlay non-interactive, and places the result in a
+persistent in-map identify panel. Outside-AOI checks precede raster bounds, so
+an outside click cannot be misreported as a coverage result. The real
+Colorado job's metadata and PNG remain the HTTP integration fixture; this
+environment has no browser binary for a manual desktop/mobile pass, and that
+job records zero AOI nodata cells, so its nodata behavior remains fixture-tested.
+
 The checked-in NLCD display derivative is `frontend/public/demo/nlcd-preview.png`
 (5,132 bytes, SHA-256
 `6eec92572064b083431486b164c7670dfb569702e492da4a2ec0ebbc465b3785`), with

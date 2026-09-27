@@ -482,7 +482,7 @@ The read-only parsing/QA, discrepancy-audit, owner-approved derived staging, and
 
 ## Focused usability follow-up — compact screening workspace
 
-**Status:** Completed 2026-09-26
+**Status:** Completed 2026-09-27
 
 The primary frontend now uses a compact one-row header, a roughly two-thirds
 map / one-third summary desktop split, a collapsed layer control, compact
@@ -516,6 +516,13 @@ message. The actual Colorado local-bridge smoke verified display metadata,
 lineage, asset checksums, valid-class identify, and outside-AOI behavior; the
 Colorado artifact contained no AOI nodata cells, while deterministic fixtures
 cover the explicit nodata response.
+
+The follow-up repair binds the click listener immediately after Leaflet map
+creation, forwards AOI-boundary clicks explicitly, keeps the raster overlay
+non-interactive, and writes results to a persistent in-map identify panel. The
+real Colorado job's job-scoped metadata and PNG routes were rechecked. No
+browser binary is available in the current environment, so manual desktop and
+mobile click verification remains outstanding.
 
 ## Milestone 7 — Backend API and operational endpoints
 

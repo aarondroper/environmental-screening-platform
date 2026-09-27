@@ -29,6 +29,9 @@ const hexRgb = (value) => {
 };
 
 export const identifyNlcdPixel = ({ latitude, longitude }, metadata, imageData, aoi) => {
+  if (aoi && !pointInAoi([longitude, latitude], aoi)) {
+    return { status: "outside_aoi", message: "Outside the loaded AOI." };
+  }
   const bounds = metadata?.alignment?.overlay_bounds_wgs84;
   if (!Array.isArray(bounds) || bounds.length !== 4) {
     return { status: "outside_coverage", message: "No NLCD observation: coverage bounds are unavailable." };
@@ -36,10 +39,7 @@ export const identifyNlcdPixel = ({ latitude, longitude }, metadata, imageData, 
   const [west, south, east, north] = bounds.map(Number);
   if (![west, south, east, north].every(Number.isFinite)
     || longitude < west || longitude > east || latitude < south || latitude > north) {
-    return { status: "outside_coverage", message: "No NLCD observation: this location is outside NLCD coverage." };
-  }
-  if (aoi && !pointInAoi([longitude, latitude], aoi)) {
-    return { status: "outside_aoi", message: "Outside the loaded AOI." };
+    return { status: "no_observation", message: "No NLCD observation at this location: outside preview coverage." };
   }
   const displayRaster = metadata.display_raster || metadata.raster;
   const width = Number(imageData?.width || displayRaster?.width);

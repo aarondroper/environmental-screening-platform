@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { parseAoiGeometry } from "../src/aoi-geometry.mjs";
 import { identifyNlcdPixel } from "../src/nlcd-identify.mjs";
+import { bindMapIdentify, updateIdentifyTarget } from "../src/map-identify-controller.mjs";
 
 const report = JSON.parse(await readFile(new URL("../public/demo/report.json", import.meta.url), "utf8"));
 
@@ -92,8 +93,8 @@ test("identifies an NLCD class by human-readable name and preserves unknown stat
   assert.equal(observed.source_year, 2025);
   assert.equal(observed.inside_aoi, true);
   assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 1.5 }, metadata, imageData, aoi).status, "nodata");
-  assert.equal(identifyNlcdPixel({ latitude: 3, longitude: 1 }, metadata, imageData, aoi).status, "outside_coverage");
-  assert.equal(identifyNlcdPixel({ latitude: 1, longitude: 3 }, metadata, imageData, aoi).status, "outside_coverage");
+  assert.equal(identifyNlcdPixel({ latitude: 3, longitude: 1 }, metadata, imageData, aoi).status, "outside_aoi");
+  assert.equal(identifyNlcdPixel({ latitude: 1, longitude: 3 }, metadata, imageData, aoi).status, "outside_aoi");
 });
 
 test("identifies a location outside the loaded AOI separately from raster coverage", () => {
@@ -101,6 +102,15 @@ test("identifies a location outside the loaded AOI separately from raster covera
   const imageData = { width: 1, height: 1, data: new Uint8ClampedArray([0, 0, 0, 255]) };
   const aoi = { geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } };
   assert.equal(identifyNlcdPixel({ latitude: 1.5, longitude: 1.5 }, metadata, imageData, aoi).status, "outside_aoi");
+});
+
+test("reports no observation when a point is inside the AOI but outside the preview footprint", () => {
+  const metadata = { raster: { width: 1, height: 1 }, alignment: { overlay_bounds_wgs84: [0, 0, 1, 1] }, legend: [] };
+  const imageData = { width: 1, height: 1, data: new Uint8ClampedArray([0, 0, 0, 255]) };
+  const aoi = { geometry: { type: "Polygon", coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]] } };
+  const result = identifyNlcdPixel({ latitude: 1.5, longitude: 1.5 }, metadata, imageData, aoi);
+  assert.equal(result.status, "no_observation");
+  assert.match(result.message, /No NLCD observation at this location/);
 });
 
 test("maps all four display-grid corners to the correct categorical pixels", () => {
@@ -136,8 +146,48 @@ test("maps all four display-grid corners to the correct categorical pixels", () 
 test("always exposes explicit identify behavior while the preview is loading or unavailable", async () => {
   const map = await readFile(new URL("../src/map.mjs", import.meta.url), "utf8");
   const identify = await readFile(new URL("../src/nlcd-identify.mjs", import.meta.url), "utf8");
-  assert.match(map, /map\.on\("click"/);
+  assert.match(map, /bindMapIdentify/);
+  assert.match(await readFile(new URL("../src/map-identify-controller.mjs", import.meta.url), "utf8"), /map\.on\("click"/);
+  assert.match(map, /layer\.on\("click", handleMapClick\)/);
+  assert.match(map, /interactive: false/);
   assert.match(map, /NLCD identify is still loading/);
   assert.match(identify, /Outside the loaded AOI/);
   assert.match(identify, /No NLCD observation at this location/);
+});
+
+test("a Leaflet-compatible map click updates the persistent visible identify state", () => {
+  const listeners = new Map();
+  const map = {
+    on(type, listener) { listeners.set(type, listener); return this; },
+    off(type, listener) { if (listeners.get(type) === listener) listeners.delete(type); return this; },
+    fire(type, event) { listeners.get(type)?.(event); return this; },
+  };
+  const target = { textContent: "Click the map to inspect Annual NLCD.", dataset: {}, className: "" };
+  let handler = null;
+  const fallback = () => updateIdentifyTarget(target, { status: "loading", message: "NLCD identify is still loading." });
+  bindMapIdentify(map, () => handler, fallback);
+
+  map.fire("click", { latlng: { latitude: 40.01, longitude: -105.2795 } });
+  assert.equal(target.textContent, "NLCD identify is still loading.");
+  handler = () => updateIdentifyTarget(target, {
+    status: "observed",
+    message: "Annual NLCD 2025 class Developed Medium Intensity (23) · inside loaded AOI",
+  });
+  map.fire("click", { latlng: { latitude: 40.0105, longitude: -105.2795 } });
+  assert.match(target.textContent, /Developed Medium Intensity \(23\)/);
+  assert.equal(target.dataset.identifyState, "observed");
+  assert.match(target.className, /map-identify-observed/);
+});
+
+test("every map click has a persistent outside-AOI or no-observation message", () => {
+  const listeners = new Map();
+  const map = { on(type, listener) { listeners.set(type, listener); }, off() {}, fire(type, event) { listeners.get(type)?.(event); } };
+  const target = { textContent: "", dataset: {}, className: "" };
+  let result = { status: "outside_aoi", message: "Outside the loaded AOI." };
+  bindMapIdentify(map, () => (event) => updateIdentifyTarget(target, result), () => {});
+  map.fire("click", { latlng: { latitude: 40.02, longitude: -105.27 } });
+  assert.equal(target.textContent, "Outside the loaded AOI.");
+  result = { status: "nodata", message: "No NLCD observation at this location: the pixel is nodata." };
+  map.fire("click", { latlng: { latitude: 40.0105, longitude: -105.2795 } });
+  assert.match(target.textContent, /No NLCD observation at this location/);
 });

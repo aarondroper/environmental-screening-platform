@@ -107,6 +107,8 @@ test("renders the environmental screening workspace as the primary map-centric e
   assert.match(html, /Recorded AOI boundary/);
   assert.match(html, /data-run-screening/);
   assert.match(html, /Run screening/);
+  assert.match(html, /map-identify-panel/);
+  assert.match(html, /Click the map to inspect Annual NLCD/);
 });
 
 test("renders queued, running, succeeded, and failed screening states without inventing metrics", () => {
