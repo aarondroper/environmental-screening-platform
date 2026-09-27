@@ -3,21 +3,15 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine
 
+import esp.models  # noqa: F401  (registers tables on Base.metadata)
 from esp.config import get_settings
-from esp.db import Base
+from esp.db import Base, include_object
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
-
-# Tables owned by the PostGIS extension, not by this application.
-POSTGIS_OWNED = {"spatial_ref_sys"}
-
-
-def include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]
-    return not (type_ == "table" and name in POSTGIS_OWNED)
 
 
 def run_migrations_offline() -> None:

@@ -34,3 +34,18 @@ def test_fresh_database_upgrades_to_head_and_round_trips(empty_database_url: str
 
 def test_migration_history_is_linear() -> None:
     assert len(ScriptDirectory.from_config(alembic_config()).get_heads()) == 1
+
+
+def test_migrations_match_models(database_url: str) -> None:
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    import esp.models  # noqa: F401
+    from esp.db import Base, include_object
+
+    engine = create_engine(database_url)
+    with engine.connect() as conn:
+        context = MigrationContext.configure(conn, opts={"include_object": include_object})
+        diff = compare_metadata(context, Base.metadata)
+    engine.dispose()
+    assert diff == []

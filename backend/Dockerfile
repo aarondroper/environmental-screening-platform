@@ -14,7 +14,7 @@ COPY migrations ./migrations
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
-RUN useradd --system --uid 10001 esp
+RUN useradd --system --uid 10001 esp && mkdir -p /data/raw && chown esp /data/raw
 USER esp
 
 EXPOSE 8000

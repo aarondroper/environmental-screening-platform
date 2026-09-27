@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from esp import __version__
+from esp.api.screenings import router as screenings_router
 from esp.config import get_settings
 from esp.db import get_session
 from esp.logging import configure_logging
@@ -21,6 +22,7 @@ app = FastAPI(
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
 )
+app.include_router(screenings_router)
 
 
 class Health(BaseModel):

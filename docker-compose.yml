@@ -7,6 +7,9 @@ x-backend: &backend
   environment:
     ESP_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-esp}:${POSTGRES_PASSWORD:-esp}@db:5432/${POSTGRES_DB:-esp}
     ESP_LOG_LEVEL: ${ESP_LOG_LEVEL:-INFO}
+    ESP_RAW_DIR: /data/raw
+  volumes:
+    - raw-data:/data/raw
 
 services:
   db:
@@ -45,6 +48,14 @@ services:
       timeout: 3s
       retries: 10
 
+  worker:
+    <<: *backend
+    command: ["python", "-m", "esp.worker"]
+    stop_grace_period: 30s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   web:
     build: ./frontend
     environment:
@@ -57,3 +68,4 @@ services:
 
 volumes:
   db-data:
+  raw-data:

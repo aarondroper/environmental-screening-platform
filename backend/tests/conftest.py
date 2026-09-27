@@ -14,6 +14,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, make_url, text
+from sqlalchemy.orm import Session, sessionmaker
 
 from esp.config import get_settings
 from esp.db import get_engine
@@ -64,3 +65,8 @@ def database_url(empty_database_url: str) -> str:
     """A brand-new database migrated to head."""
     command.upgrade(alembic_config(), "head")
     return empty_database_url
+
+
+@pytest.fixture
+def sessions(database_url: str) -> sessionmaker[Session]:
+    return sessionmaker(bind=get_engine(), expire_on_commit=False)

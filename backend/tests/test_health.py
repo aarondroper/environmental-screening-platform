@@ -1,9 +1,11 @@
+from alembic.script import ScriptDirectory
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from esp.api.main import app
 from esp.db import get_session
+from tests.conftest import alembic_config
 
 
 def test_health_reports_database_postgis_and_schema_revision(database_url: str) -> None:
@@ -14,7 +16,8 @@ def test_health_reports_database_postgis_and_schema_revision(database_url: str) 
     assert body["status"] == "ok"
     assert body["database"] == "ok"
     assert body["postgis_version"].startswith("3.")
-    assert body["schema_revision"] == "0001"
+    head = ScriptDirectory.from_config(alembic_config()).get_current_head()
+    assert body["schema_revision"] == head
 
 
 def test_health_is_degraded_when_database_is_unreachable() -> None:
