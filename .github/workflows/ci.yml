@@ -66,13 +66,13 @@ jobs:
       - name: Health through the web proxy
         run: |
           for i in $(seq 60); do
-            curl --fail --silent http://localhost:8080/api/health > health.json && break
+            curl --fail --silent http://localhost:8090/api/health > health.json && break
             sleep 3
           done
           cat health.json
           jq -e '.status == "ok" and .database == "ok"' health.json
       - name: Frontend is served
-        run: curl --fail --silent http://localhost:8080/ | grep -q '<div id="root">'
+        run: curl --fail --silent http://localhost:8090/ | grep -q '<div id="root">'
       - if: failure()
         run: docker compose logs
       - if: always()

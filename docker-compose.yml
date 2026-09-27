@@ -1,4 +1,4 @@
-# Local development stack. `docker compose up --build` then open http://localhost:8080
+# Local development stack. `docker compose up --build` then open http://localhost:8090
 # Defaults are development-only credentials; override via a .env file.
 name: esp
 
@@ -50,7 +50,7 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-8090}:80"
     depends_on:
       api:
         condition: service_healthy

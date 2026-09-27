@@ -25,9 +25,9 @@ Requires Docker with Compose v2.
 docker compose up --build
 ```
 
-- App: http://localhost:8080
-- API docs: http://localhost:8080/api/docs
-- Health: http://localhost:8080/api/health
+- App: http://localhost:8090
+- API docs: http://localhost:8090/api/docs
+- Health: http://localhost:8090/api/health
 
 Development commands (backend with `uv`, frontend with `npm`) are in [CLAUDE.md](CLAUDE.md).
 

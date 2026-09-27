@@ -18,7 +18,7 @@ The engineering system is the product; screening analysis stays simple and trans
 
 ## Commands
 ```bash
-docker compose up --build            # full stack → http://localhost:8080 (API docs: /api/docs)
+docker compose up --build            # full stack → http://localhost:8090 (API docs: /api/docs)
 docker compose up -d db              # just PostGIS for backend tests (port 5432, esp/esp)
 
 cd backend
