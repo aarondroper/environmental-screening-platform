@@ -37,6 +37,9 @@ CI (`.github/workflows/ci.yml`) runs all of the above plus a compose smoke test.
 - Walking skeleton first: extend working vertical slices; no abstractions, config, or docs
   ahead of code that needs them. Every milestone leaves compose, migrations, and tests green.
 - Tests that touch the database run against real PostGIS (fresh database per test), not mocks.
+- Tests never hit provider APIs; use small checked-in fixtures. FEMA and ScienceBase block
+  non-US traffic (the owner's machine is outside the US), so live ingestion runs on US hosts
+  (the VM or CI).
 - Schema changes only through Alembic; migrations must upgrade on a fresh DB and downgrade.
 - OWNER DECISIONS (scope, datasets, methodology/metrics/thresholds, auth, visual direction,
   cost, destructive removals) are asked, never assumed. Development decisions: choose, record

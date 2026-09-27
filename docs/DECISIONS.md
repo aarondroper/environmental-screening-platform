@@ -16,10 +16,13 @@ message. The region boundary is data (Census TIGER state boundary), so widening 
 data-load exercise, not a rewrite. Per-AOI on-demand acquisition from providers is not used.
 
 **D4 — Sources (owner, 2026-09-27).** FEMA NFHL; PAD-US 4.1; Annual NLCD (2025 land cover);
-USGS 3DEP 1 arc-second DEM; NRCS SSURGO hydric-soil information. PAD-US 4.1 is only
-published behind a browser challenge, so its release is acquired manually once and registered
-as a checksummed raw snapshot; everything after that is automated. NWI stays excluded
+USGS 3DEP 1 arc-second DEM; NRCS SSURGO hydric-soil information. NWI stays excluded
 (redistribution terms unconfirmed). Details in `SOURCES.md`.
+*Update 2026-09-27:* the planned manual PAD-US acquisition is unnecessary. FEMA and
+ScienceBase block non-US traffic but serve US hosts normally (verified from a GitHub runner),
+so all five sources are fully automated. Consequence: live ingestion runs on US
+infrastructure (the VM or CI), never from a non-US development machine; tests use small
+checked-in fixtures.
 
 **D5 — Screening metrics (owner, 2026-09-27).** Per-source, no thresholds or composite score:
 FEMA area/% of AOI by flood zone; PAD-US overlap area by GAP status and manager type, plus
