@@ -9,3 +9,6 @@ __pycache__/
 .env
 frontend/dist/
 frontend/node_modules/
+
+# Local design references (not committed)
+/references/
